@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    container_name: yari-crm-backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Esto sobreescribe el comando del Dockerfile para usar modo DEV (con hot-reload)
+    command: npm run start:dev
+    ports:
+      - "3000:3000"
+    volumes:
+      # Sincroniza tu carpeta local con el contenedor para ver cambios en vivo
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    env_file:
+      - .env  # Le dice que lea tus claves de Supabase/WildMail
+    networks:
+      - yari-network
+
+networks:
+  yari-network:
+    driver: bridge
