@@ -18,6 +18,11 @@ async function bootstrap() {
     forbidNonWhitelisted: false, // No da error si envías datos de más, solo los ignora (más seguro ahora)
   }));
 
+app.enableCors({
+  origin: 'http://localhost:3001', // o el puerto que uses en el frontend
+  credentials: true,
+});
+
   await app.listen(3000);
   console.log('🚀 Backend corriendo en http://localhost:3000');
 }
