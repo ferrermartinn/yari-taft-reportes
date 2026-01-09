@@ -68,11 +68,12 @@ export class GmailService {
 
   private async sendViaPostmark(email: string, emailHtml: string, emailText: string) {
     if (!this.postmarkClient) {
-      throw new Error('Postmark no está configurado correctamente.');
+      throw new Error('Postmark no está configurado correctamente. Verifica POSTMARK_API_KEY en las variables de entorno.');
     }
 
     try {
       this.logger.log(`📧 Enviando email vía Postmark a: ${email}`);
+      this.logger.log(`✅ Postmark es la solución recomendada para emails transaccionales`);
       
       const result = await this.postmarkClient.sendEmail({
         From: this.fromEmail,
@@ -84,6 +85,7 @@ export class GmailService {
       });
 
       this.logger.log(`✅ Email enviado exitosamente a ${email} (Postmark)`);
+      this.logger.log(`📧 MessageID: ${result.MessageID}`);
       return {
         success: true,
         data: {
@@ -98,8 +100,16 @@ export class GmailService {
       this.logger.error(`❌ ERROR enviando email vía Postmark: ${error.message}`);
       if (error.ErrorCode) {
         this.logger.error(`📋 ErrorCode: ${error.ErrorCode}, Message: ${error.Message}`);
+        
+        // Errores comunes de Postmark con mensajes claros
+        if (error.ErrorCode === 401 || error.ErrorCode === 403) {
+          throw new Error('API Key de Postmark inválida. Verifica POSTMARK_API_KEY en las variables de entorno.');
+        }
+        if (error.ErrorCode === 422) {
+          throw new Error(`Error de validación en Postmark: ${error.Message}. Verifica que el email remitente (${this.fromEmail}) esté configurado correctamente.`);
+        }
       }
-      throw new Error(`Error enviando email: ${error.message}`);
+      throw new Error(`Error enviando email vía Postmark: ${error.message}`);
     }
   }
 
@@ -198,28 +208,48 @@ export class GmailService {
       };
 
       this.logger.log(`📤 Creando y enviando campaña...`);
-      const campaignResponse = await firstValueFrom(
-        this.httpService.post(createCampaignUrl, campaignPayload, { headers }),
-      );
-      const campaignId = campaignResponse.data?.campaign?.id;
+      try {
+        const campaignResponse = await firstValueFrom(
+          this.httpService.post(createCampaignUrl, campaignPayload, { headers }),
+        );
+        const campaignId = campaignResponse.data?.campaign?.id;
 
-      this.logger.log(`✅ Email enviado exitosamente a ${email} (ActiveCampaign)`);
-      return {
-        success: true,
-        data: {
-          contactId,
-          messageId,
-          campaignId,
-          provider: 'activecampaign',
-          message: 'Email enviado exitosamente vía ActiveCampaign',
-        },
-      };
+        this.logger.log(`✅ Email enviado exitosamente a ${email} (ActiveCampaign)`);
+        return {
+          success: true,
+          data: {
+            contactId,
+            messageId,
+            campaignId,
+            provider: 'activecampaign',
+            message: 'Email enviado exitosamente vía ActiveCampaign',
+          },
+        };
+      } catch (campaignError: any) {
+        // Error 405 = Method Not Allowed - ActiveCampaign no permite crear campañas así
+        if (campaignError.response?.status === 405 || campaignError.response?.status === 404) {
+          this.logger.error(`❌ ActiveCampaign no permite enviar emails transaccionales de esta manera.`);
+          this.logger.error(`💡 SOLUCIÓN: Usa Postmark (POSTMARK_API_KEY) que es la herramienta recomendada por ActiveCampaign para emails transaccionales.`);
+          throw new Error(
+            'ActiveCampaign no soporta envío directo de emails transaccionales. ' +
+            'Por favor, configura POSTMARK_API_KEY en las variables de entorno. ' +
+            'Postmark está integrado en ActiveCampaign y es la solución recomendada para este tipo de emails.'
+          );
+        }
+        throw campaignError;
+      }
     } catch (error: any) {
       this.logger.error(`❌ ERROR enviando email vía ActiveCampaign: ${error.message}`);
       if (error.response) {
         this.logger.error(`📋 Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`);
       }
-      throw error;
+      
+      // Si el error ya tiene un mensaje claro, lo lanzamos tal cual
+      if (error.message.includes('Postmark') || error.message.includes('POSTMARK_API_KEY')) {
+        throw error;
+      }
+      
+      throw new Error(`Error enviando email: ${error.message}`);
     }
   }
 
