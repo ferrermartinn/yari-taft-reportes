@@ -1,39 +1,216 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { ServerClient } from 'postmark';
+
+type EmailProvider = 'postmark' | 'activecampaign';
 
 @Injectable()
 export class GmailService {
   private readonly logger = new Logger(GmailService.name);
+  private readonly provider: EmailProvider | null;
   private readonly postmarkClient: ServerClient | null;
+  private readonly activeCampaignApiUrl: string;
+  private readonly activeCampaignApiKey: string;
   private readonly fromEmail: string;
 
   constructor(
     private configService: ConfigService,
+    private readonly httpService: HttpService,
   ) {
-    const apiKey = this.configService.get<string>('POSTMARK_API_KEY') || '';
-    this.fromEmail = this.configService.get<string>('POSTMARK_FROM_EMAIL') || 'hola@yaritaft.com';
+    // Detectar qué proveedor está configurado
+    const postmarkKey = this.configService.get<string>('POSTMARK_API_KEY') || '';
+    const activeCampaignKey = this.configService.get<string>('WILDMAIL_API_KEY') || '';
+    const activeCampaignUrl = this.configService.get<string>('WILDMAIL_API_URL') || 'https://yaritaft.api-us1.com';
     
-    if (!apiKey) {
-      this.logger.warn('⚠️ POSTMARK_API_KEY no configurada. Los emails no se enviarán.');
-      this.postmarkClient = null;
-    } else {
-      this.postmarkClient = new ServerClient(apiKey);
+    this.fromEmail = this.configService.get<string>('POSTMARK_FROM_EMAIL') || 
+                     this.configService.get<string>('WILDMAIL_FROM_EMAIL') || 
+                     'hola@yaritaft.com';
+
+    // Prioridad: Postmark > ActiveCampaign
+    if (postmarkKey) {
+      this.provider = 'postmark';
+      this.postmarkClient = new ServerClient(postmarkKey);
+      this.activeCampaignApiKey = '';
+      this.activeCampaignApiUrl = '';
       this.logger.log(`✅ Postmark configurado. From: ${this.fromEmail}`);
+    } else if (activeCampaignKey) {
+      this.provider = 'activecampaign';
+      this.postmarkClient = null;
+      this.activeCampaignApiKey = activeCampaignKey;
+      this.activeCampaignApiUrl = activeCampaignUrl;
+      this.logger.log(`✅ ActiveCampaign configurado. From: ${this.fromEmail}`);
+    } else {
+      this.provider = null;
+      this.postmarkClient = null;
+      this.activeCampaignApiKey = '';
+      this.activeCampaignApiUrl = '';
+      this.logger.warn('⚠️ No hay proveedor de email configurado. Configura POSTMARK_API_KEY o WILDMAIL_API_KEY.');
     }
   }
 
   async sendMagicLink(email: string, studentName: string, magicLink: string) {
+    if (!this.provider) {
+      throw new Error('No hay proveedor de email configurado. Configura POSTMARK_API_KEY o WILDMAIL_API_KEY.');
+    }
+
+    const firstName = studentName.split(' ')[0];
+    const emailHtml = this.getEmailHtml(firstName, magicLink);
+    const emailText = `Hola ${firstName},\n\nTu reporte de progreso semanal ya está listo. Accede aquí: ${magicLink}\n\n⏰ Importante: Este enlace es válido por 7 días.`;
+
+    if (this.provider === 'postmark') {
+      return await this.sendViaPostmark(email, emailHtml, emailText);
+    } else {
+      return await this.sendViaActiveCampaign(email, studentName, magicLink, emailHtml);
+    }
+  }
+
+  private async sendViaPostmark(email: string, emailHtml: string, emailText: string) {
     if (!this.postmarkClient) {
-      throw new Error('Postmark no está configurado. Verifica POSTMARK_API_KEY en las variables de entorno.');
+      throw new Error('Postmark no está configurado correctamente.');
     }
 
     try {
-      this.logger.log(`📧 Enviando email a: ${email}`);
+      this.logger.log(`📧 Enviando email vía Postmark a: ${email}`);
+      
+      const result = await this.postmarkClient.sendEmail({
+        From: this.fromEmail,
+        To: email,
+        Subject: '📊 Tu Reporte Semanal Ya Está Listo',
+        HtmlBody: emailHtml,
+        TextBody: emailText,
+        MessageStream: 'outbound',
+      });
 
-      const firstName = studentName.split(' ')[0];
+      this.logger.log(`✅ Email enviado exitosamente a ${email} (Postmark)`);
+      return {
+        success: true,
+        data: {
+          messageId: result.MessageID,
+          to: result.To,
+          submittedAt: result.SubmittedAt,
+          provider: 'postmark',
+          message: 'Email enviado exitosamente vía Postmark',
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ ERROR enviando email vía Postmark: ${error.message}`);
+      if (error.ErrorCode) {
+        this.logger.error(`📋 ErrorCode: ${error.ErrorCode}, Message: ${error.Message}`);
+      }
+      throw new Error(`Error enviando email: ${error.message}`);
+    }
+  }
 
-      const emailHtml = `
+  private async sendViaActiveCampaign(email: string, studentName: string, magicLink: string, emailHtml: string) {
+    try {
+      this.logger.log(`📧 Enviando email vía ActiveCampaign a: ${email}`);
+
+      const headers = {
+        'Api-Token': this.activeCampaignApiKey,
+        'Content-Type': 'application/json',
+      };
+
+      // Crear o obtener contacto
+      let contactId: number;
+      try {
+        const contactUrl = `${this.activeCampaignApiUrl}/api/3/contacts`;
+        const contactPayload = {
+          contact: {
+            email: email,
+            firstName: studentName.split(' ')[0],
+            lastName: studentName.split(' ').slice(1).join(' ') || '',
+          },
+        };
+
+        let contactResponse;
+        try {
+          contactResponse = await firstValueFrom(
+            this.httpService.post(contactUrl, contactPayload, { headers }),
+          );
+        } catch (contactError: any) {
+          if (contactError.response?.status === 422) {
+            const getContactUrl = `${this.activeCampaignApiUrl}/api/3/contacts?email=${encodeURIComponent(email)}`;
+            contactResponse = await firstValueFrom(
+              this.httpService.get(getContactUrl, { headers }),
+            );
+          } else {
+            throw contactError;
+          }
+        }
+
+        contactId = contactResponse.data?.contact?.id || contactResponse.data?.contacts?.[0]?.id;
+        if (!contactId) throw new Error('No se pudo obtener contactId');
+      } catch (error: any) {
+        this.logger.error(`❌ Error creando/obteniendo contacto: ${error.message}`);
+        throw error;
+      }
+
+      // Crear email
+      const createEmailUrl = `${this.activeCampaignApiUrl}/api/3/emails`;
+      const emailPayload = {
+        email: {
+          name: `Reporte Semanal - ${studentName} - ${Date.now()}`,
+          type: 'mime',
+          format: 'mime',
+          subject: '📊 Tu Reporte Semanal Ya Está Listo',
+          html: emailHtml,
+          fromemail: this.fromEmail,
+          fromname: 'Yari Taft',
+        },
+      };
+
+      const emailResponse = await firstValueFrom(
+        this.httpService.post(createEmailUrl, emailPayload, { headers }),
+      );
+      const emailId = emailResponse.data?.email?.id;
+
+      // Crear y enviar campaña
+      const createCampaignUrl = `${this.activeCampaignApiUrl}/api/3/campaigns`;
+      const campaignPayload = {
+        campaign: {
+          type: 'single',
+          name: `Reporte Semanal - ${studentName} - ${Date.now()}`,
+          sdate: new Date().toISOString(),
+          status: 1,
+          public: 0,
+          tracklinks: 'all',
+          trackreads: 1,
+          htmlunsub: 1,
+          textunsub: 0,
+          p: { [String(contactId)]: contactId },
+          m: [emailId],
+        },
+      };
+
+      const campaignResponse = await firstValueFrom(
+        this.httpService.post(createCampaignUrl, campaignPayload, { headers }),
+      );
+      const campaignId = campaignResponse.data?.campaign?.id;
+
+      this.logger.log(`✅ Email enviado exitosamente a ${email} (ActiveCampaign)`);
+      return {
+        success: true,
+        data: {
+          contactId,
+          emailId,
+          campaignId,
+          provider: 'activecampaign',
+          message: 'Email enviado exitosamente vía ActiveCampaign',
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ ERROR enviando email vía ActiveCampaign: ${error.message}`);
+      if (error.response) {
+        this.logger.error(`📋 Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`);
+      }
+      throw new Error(`Error enviando email: ${error.message}`);
+    }
+  }
+
+  private getEmailHtml(firstName: string, magicLink: string): string {
+    return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -78,48 +255,7 @@ export class GmailService {
   </div>
 </body>
 </html>
-      `;
-
-      const emailText = `Hola ${firstName},\n\nTu reporte de progreso semanal ya está listo. Accede aquí: ${magicLink}\n\n⏰ Importante: Este enlace es válido por 7 días.`;
-
-      // Enviar email con Postmark (mucho más simple)
-      const result = await this.postmarkClient.sendEmail({
-        From: this.fromEmail,
-        To: email,
-        Subject: '📊 Tu Reporte Semanal Ya Está Listo',
-        HtmlBody: emailHtml,
-        TextBody: emailText,
-        MessageStream: 'outbound', // Stream para emails transaccionales
-      });
-
-      this.logger.log(`✅ Email enviado exitosamente a ${email}`);
-      this.logger.log(`📧 MessageID: ${result.MessageID}`);
-
-      return {
-        success: true,
-        data: {
-          messageId: result.MessageID,
-          to: result.To,
-          submittedAt: result.SubmittedAt,
-          message: 'Email enviado exitosamente vía Postmark',
-        },
-      };
-
-    } catch (error: any) {
-      this.logger.error(`❌ ERROR enviando email a ${email}`);
-      this.logger.error(`📋 Error: ${error.message}`);
-      if (error.stack) {
-        this.logger.error(`📋 Stack: ${error.stack}`);
-      }
-      
-      // Postmark proporciona errores más descriptivos
-      if (error.ErrorCode) {
-        this.logger.error(`📋 ErrorCode: ${error.ErrorCode}`);
-        this.logger.error(`📋 Message: ${error.Message}`);
-      }
-      
-      throw new Error(`Error enviando email: ${error.message}`);
-    }
+    `;
   }
 
 }
