@@ -51,8 +51,8 @@ Sistema completo de gestión para seguimiento de estudiantes, envío automático
 - ✅ Trazabilidad completa de acciones
 
 ### Integración de Emails
-- ✅ Integración con ActiveCampaign/Wildmail
-- ✅ Envío de emails usando dominio verificado
+- ✅ Integración con Postmark (emails transaccionales)
+- ✅ Envío rápido y confiable de emails
 - ✅ Plantillas HTML profesionales
 
 ## 🛠 Tecnologías
@@ -61,7 +61,7 @@ Sistema completo de gestión para seguimiento de estudiantes, envío automático
 - **NestJS** - Framework Node.js
 - **TypeScript** - Lenguaje de programación
 - **Supabase** - Base de datos PostgreSQL
-- **ActiveCampaign API** - Envío de emails
+- **Postmark** - Envío de emails transaccionales
 - **bcrypt** - Hash de contraseñas
 - **Cron Jobs** - Tareas programadas
 
@@ -77,7 +77,7 @@ Sistema completo de gestión para seguimiento de estudiantes, envío automático
 - Node.js 18+
 - npm o yarn
 - Cuenta de Supabase
-- Cuenta de ActiveCampaign/Wildmail
+- Cuenta de Postmark (o ActiveCampaign con Postmark integrado)
 
 ### 1. Clonar el Repositorio
 ```bash
@@ -111,9 +111,9 @@ SUPABASE_URL=https://tu-proyecto.supabase.co
 SUPABASE_KEY=tu-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=tu-service-role-key
 
-# ActiveCampaign/Wildmail
-WILDMAIL_API_URL=https://yaritaft.api-us1.com
-WILDMAIL_API_KEY=tu-api-key-de-activecampaign
+# Postmark (para emails transaccionales)
+POSTMARK_API_KEY=tu-postmark-api-key
+POSTMARK_FROM_EMAIL=hola@yaritaft.com
 
 # Frontend URL
 FRONTEND_URL=http://localhost:3000
@@ -346,9 +346,24 @@ yari-taft-reportes/
 2. Build: `npm run build`
 3. Iniciar: `npm run start`
 
-### Configuración de Dominio (ActiveCampaign)
+### Configuración de Postmark
 
-Para que los emails funcionen correctamente, ver **GUIA_ACTIVECAMPAIGN.md** para instrucciones detalladas paso a paso.
+1. **Obtener API Key de Postmark:**
+   - Si tienes ActiveCampaign, Postmark está integrado
+   - Ve a tu cuenta de ActiveCampaign → Configuración → Desarrollador
+   - O crea una cuenta en [Postmark](https://postmarkapp.com)
+   - Obtén tu Server API Token
+
+2. **Configurar dominio (opcional pero recomendado):**
+   - En Postmark, agrega tu dominio `yaritaft.com`
+   - Agrega los registros DNS (SPF, DKIM) que Postmark te proporciona
+   - Espera la verificación (1-2 horas)
+
+3. **Variables de entorno:**
+   - `POSTMARK_API_KEY`: Tu Server API Token de Postmark
+   - `POSTMARK_FROM_EMAIL`: El email desde el que enviarás (ej: `hola@yaritaft.com`)
+
+**Nota:** Postmark es mucho más simple que ActiveCampaign para emails transaccionales. No necesitas crear contactos, emails o campañas - solo envías directamente.
 
 **Resumen rápido:**
 1. Acceder a ActiveCampaign → Settings → Sending Domain
