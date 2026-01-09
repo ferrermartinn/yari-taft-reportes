@@ -106,6 +106,7 @@ export class GmailService {
   private async sendViaActiveCampaign(email: string, studentName: string, magicLink: string, emailHtml: string) {
     try {
       this.logger.log(`📧 Enviando email vía ActiveCampaign a: ${email}`);
+      this.logger.warn(`⚠️ NOTA: ActiveCampaign no es ideal para emails transaccionales. Se recomienda usar Postmark.`);
 
       const headers = {
         'Api-Token': this.activeCampaignApiKey,
@@ -142,17 +143,18 @@ export class GmailService {
 
         contactId = contactResponse.data?.contact?.id || contactResponse.data?.contacts?.[0]?.id;
         if (!contactId) throw new Error('No se pudo obtener contactId');
+        this.logger.log(`✅ Contacto listo: ID ${contactId}`);
       } catch (error: any) {
         this.logger.error(`❌ Error creando/obteniendo contacto: ${error.message}`);
         throw error;
       }
 
-      // Crear email
-      const createEmailUrl = `${this.activeCampaignApiUrl}/api/3/emails`;
-      const emailPayload = {
-        email: {
+      // ActiveCampaign requiere crear un "message" primero, luego una campaña
+      // Intentamos usar el endpoint de messages para emails transaccionales
+      const createMessageUrl = `${this.activeCampaignApiUrl}/api/3/messages`;
+      const messagePayload = {
+        message: {
           name: `Reporte Semanal - ${studentName} - ${Date.now()}`,
-          type: 'mime',
           format: 'mime',
           subject: '📊 Tu Reporte Semanal Ya Está Listo',
           html: emailHtml,
@@ -161,12 +163,23 @@ export class GmailService {
         },
       };
 
-      const emailResponse = await firstValueFrom(
-        this.httpService.post(createEmailUrl, emailPayload, { headers }),
-      );
-      const emailId = emailResponse.data?.email?.id;
+      this.logger.log(`📝 Creando mensaje en ActiveCampaign...`);
+      let messageId: number;
+      try {
+        const messageResponse = await firstValueFrom(
+          this.httpService.post(createMessageUrl, messagePayload, { headers }),
+        );
+        messageId = messageResponse.data?.message?.id;
+        this.logger.log(`✅ Mensaje creado: ID ${messageId}`);
+      } catch (messageError: any) {
+        this.logger.error(`❌ Error creando mensaje: ${messageError.message}`);
+        if (messageError.response) {
+          this.logger.error(`📋 Status: ${messageError.response.status}, Data: ${JSON.stringify(messageError.response.data)}`);
+        }
+        throw new Error(`ActiveCampaign no soporta envío directo de emails transaccionales. Usa Postmark (POSTMARK_API_KEY) en su lugar. Error: ${messageError.message}`);
+      }
 
-      // Crear y enviar campaña
+      // Crear y enviar campaña con el mensaje
       const createCampaignUrl = `${this.activeCampaignApiUrl}/api/3/campaigns`;
       const campaignPayload = {
         campaign: {
@@ -180,10 +193,11 @@ export class GmailService {
           htmlunsub: 1,
           textunsub: 0,
           p: { [String(contactId)]: contactId },
-          m: [emailId],
+          m: [messageId],
         },
       };
 
+      this.logger.log(`📤 Creando y enviando campaña...`);
       const campaignResponse = await firstValueFrom(
         this.httpService.post(createCampaignUrl, campaignPayload, { headers }),
       );
@@ -194,7 +208,7 @@ export class GmailService {
         success: true,
         data: {
           contactId,
-          emailId,
+          messageId,
           campaignId,
           provider: 'activecampaign',
           message: 'Email enviado exitosamente vía ActiveCampaign',
@@ -205,7 +219,7 @@ export class GmailService {
       if (error.response) {
         this.logger.error(`📋 Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`);
       }
-      throw new Error(`Error enviando email: ${error.message}`);
+      throw error;
     }
   }
 
