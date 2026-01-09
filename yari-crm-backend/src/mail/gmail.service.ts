@@ -101,6 +101,8 @@ export class GmailService {
     emailHtml: string,
     headers: any,
   ) {
+    let contactId: number | undefined;
+    
     try {
       this.logger.log(`🔄 Creando contacto y enviando email usando dominio verificado...`);
 
@@ -133,10 +135,12 @@ export class GmailService {
         }
       }
 
-      const contactId = contactResponse.data?.contact?.id || contactResponse.data?.contacts?.[0]?.id;
+      contactId = contactResponse.data?.contact?.id || contactResponse.data?.contacts?.[0]?.id;
       this.logger.log(`✅ Contacto listo: ID ${contactId}`);
 
       // Paso 2: Crear un email en ActiveCampaign
+      // Intentamos usar hola@yaritaft.com, si el dominio no está verificado
+      // ActiveCampaign puede rechazarlo o usar un dominio por defecto
       const createEmailUrl = `${this.apiUrl}/api/3/emails`;
       const emailPayload = {
         email: {
@@ -145,7 +149,7 @@ export class GmailService {
           format: 'mime',
           subject: '📊 Tu Reporte Semanal Ya Está Listo',
           html: emailHtml,
-          fromemail: 'hola@yaritaft.com',
+          fromemail: 'hola@yaritaft.com', // Usa este email (puede requerir dominio verificado)
           fromname: 'Yari Taft',
         },
       };
@@ -157,6 +161,10 @@ export class GmailService {
 
       const emailId = emailResponse.data?.email?.id;
       this.logger.log(`✅ Email creado: ID ${emailId}`);
+
+      if (!contactId) {
+        throw new Error('ContactId no disponible para crear campaña');
+      }
 
       // Paso 3: Crear y enviar campaña inmediatamente (usa el dominio verificado)
       const createCampaignUrl = `${this.apiUrl}/api/3/campaigns`;
@@ -171,7 +179,7 @@ export class GmailService {
           trackreads: 1,
           htmlunsub: 1,
           textunsub: 0,
-          p: { [contactId]: contactId }, // Lista de contactos
+          p: { [String(contactId)]: contactId }, // Lista de contactos
           m: [emailId], // Lista de emails
         },
       };
@@ -212,7 +220,113 @@ export class GmailService {
         this.logger.error(`⚠️ Endpoint no encontrado - Verifica que tu plan de ActiveCampaign incluya esta funcionalidad`);
       }
 
+      // Si el error es por dominio no verificado, intentamos con el email de ActiveCampaign por defecto
+      if (errorMessage?.toLowerCase().includes('domain') || errorMessage?.toLowerCase().includes('verif')) {
+        this.logger.warn(`⚠️ Dominio no verificado. Intentando con email por defecto de ActiveCampaign...`);
+        if (contactId) {
+          return await this.sendWithDefaultEmail(email, studentName, magicLink, emailHtml, headers, contactId);
+        } else {
+          // Intentamos obtener el contactId si no lo tenemos
+          try {
+            const contactUrl = `${this.apiUrl}/api/3/contacts?email=${encodeURIComponent(email)}`;
+            const contactResponse = await firstValueFrom(
+              this.httpService.get(contactUrl, { headers }),
+            );
+            const retrievedContactId = contactResponse.data?.contact?.id || contactResponse.data?.contacts?.[0]?.id;
+            if (retrievedContactId) {
+              return await this.sendWithDefaultEmail(email, studentName, magicLink, emailHtml, headers, retrievedContactId);
+            }
+          } catch (contactErr) {
+            this.logger.error(`❌ No se pudo obtener contactId: ${contactErr}`);
+          }
+        }
+      }
+
       throw new Error(`Error enviando email: ${errorMessage} (Status: ${errorStatus})`);
+    }
+  }
+
+  /**
+   * Método alternativo: Enviar usando el email por defecto de ActiveCampaign
+   * (cuando el dominio no está verificado todavía)
+   */
+  private async sendWithDefaultEmail(
+    email: string,
+    studentName: string,
+    magicLink: string,
+    emailHtml: string,
+    headers: any,
+    contactId: number,
+  ) {
+    try {
+      this.logger.log(`🔄 Intentando enviar con email por defecto de ActiveCampaign...`);
+
+      // Obtener el email por defecto de ActiveCampaign (puede ser el de la cuenta)
+      // Por ahora intentamos sin especificar fromemail para que ActiveCampaign use el por defecto
+      const createEmailUrl = `${this.apiUrl}/api/3/emails`;
+      const emailPayload = {
+        email: {
+          name: `Reporte Semanal - ${studentName} - ${Date.now()}`,
+          type: 'mime',
+          format: 'mime',
+          subject: '📊 Tu Reporte Semanal Ya Está Listo',
+          html: emailHtml,
+          // No especificamos fromemail para que ActiveCampaign use el por defecto
+          fromname: 'Yari Taft',
+        },
+      };
+
+      this.logger.log(`📝 Creando email en ActiveCampaign (sin especificar remitente)...`);
+      const emailResponse = await firstValueFrom(
+        this.httpService.post(createEmailUrl, emailPayload, { headers }),
+      );
+
+      const emailId = emailResponse.data?.email?.id;
+      this.logger.log(`✅ Email creado: ID ${emailId}`);
+
+      // Crear y enviar campaña
+      const createCampaignUrl = `${this.apiUrl}/api/3/campaigns`;
+      const campaignPayload = {
+        campaign: {
+          type: 'single',
+          name: `Reporte Semanal - ${studentName} - ${Date.now()}`,
+          sdate: new Date().toISOString(),
+          status: 1,
+          public: 0,
+          tracklinks: 'all',
+          trackreads: 1,
+          htmlunsub: 1,
+          textunsub: 0,
+          p: { [String(contactId)]: contactId },
+          m: [emailId],
+        },
+      };
+
+      this.logger.log(`📤 Creando y enviando campaña...`);
+      const campaignResponse = await firstValueFrom(
+        this.httpService.post(createCampaignUrl, campaignPayload, { headers }),
+      );
+
+      const campaignId = campaignResponse.data?.campaign?.id;
+      this.logger.log(`✅ Campaña creada y enviada: ID ${campaignId}`);
+      this.logger.log(`✅ Email enviado exitosamente a ${email} (usando email por defecto de ActiveCampaign)`);
+      this.logger.warn(`⚠️ NOTA: El email se envió desde el remitente por defecto de ActiveCampaign.`);
+      this.logger.warn(`⚠️ Para usar hola@yaritaft.com, verifica el dominio en ActiveCampaign.`);
+
+      return {
+        success: true,
+        data: {
+          contactId,
+          emailId,
+          campaignId,
+          message: 'Email enviado usando remitente por defecto de ActiveCampaign',
+          warning: 'Dominio no verificado - usando email por defecto',
+        },
+      };
+
+    } catch (error: any) {
+      this.logger.error(`❌ Error incluso con email por defecto: ${error.message}`);
+      throw error;
     }
   }
 }

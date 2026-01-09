@@ -348,14 +348,16 @@ yari-taft-reportes/
 
 ### Configuración de Dominio (ActiveCampaign)
 
-Para que los emails funcionen correctamente:
+Para que los emails funcionen correctamente, ver **GUIA_ACTIVECAMPAIGN.md** para instrucciones detalladas paso a paso.
 
-1. Acceder a ActiveCampaign → Configuración → Dominios
+**Resumen rápido:**
+1. Acceder a ActiveCampaign → Settings → Sending Domain
 2. Agregar dominio `yaritaft.com`
-3. Copiar los 3 registros DNS (SPF, DKIM, DMARC)
-4. Agregar registros en el proveedor del dominio
-5. Esperar propagación (1-2 horas)
-6. Verificar en ActiveCampaign que esté verificado
+3. Copiar los 3 registros DNS (SPF, DKIM, DMARC) que ActiveCampaign genera
+4. Agregar esos registros en el proveedor donde está registrado el dominio
+5. Esperar propagación DNS (1-2 horas normalmente)
+6. Verificar en ActiveCampaign que muestre "Verified"
+7. Probar enviar un email desde la aplicación
 
 ## 📝 Scripts Útiles
 

@@ -59,7 +59,6 @@ export class MagicLinksService {
       const result = await this.gmailService.sendMagicLink(student.email, student.full_name, link);
       this.logger.log(`✅ Email enviado exitosamente a ${student.email}`);
       return {
-        success: true,
         message: `Email enviado a ${student.email}`,
         link: link,
         ...result,
