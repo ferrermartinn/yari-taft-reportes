@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
 interface Student {
   id: number;
   full_name: string;
@@ -54,9 +56,9 @@ export default function StudentProfilePage() {
   const fetchData = async () => {
     try {
       const [studentRes, reportsRes, auditRes] = await Promise.all([
-        axios.get(`http://localhost:3000/students/${studentId}`),
-        axios.get(`http://localhost:3000/weekly-reports/student/${studentId}`),
-        axios.get('http://localhost:3000/audit')
+        axios.get(`${API_URL}/students/${studentId}`),
+        axios.get(`${API_URL}/weekly-reports/student/${studentId}`),
+        axios.get(`${API_URL}/audit`)
       ]);
       setStudent(studentRes.data);
       setReports(reportsRes.data);
@@ -86,7 +88,7 @@ export default function StudentProfilePage() {
     if (!confirm(`¿Enviar formulario manual a ${student.full_name}?`)) return;
 
     try {
-      await axios.post(`http://localhost:3000/magic-links/send-one/${studentId}`);
+      await axios.post(`${API_URL}/magic-links/send-one/${studentId}`);
       alert('Formulario enviado correctamente');
     } catch (error) {
       alert('Error al enviar formulario');
@@ -111,7 +113,7 @@ export default function StudentProfilePage() {
 
     setSaving(true);
     try {
-      await axios.patch(`http://localhost:3000/students/${studentId}`, {
+      await axios.patch(`${API_URL}/students/${studentId}`, {
         full_name: editData.full_name,
         email: editData.email,
         phone: editData.phone || undefined,
@@ -133,7 +135,7 @@ export default function StudentProfilePage() {
     }
 
     try {
-      await axios.delete(`http://localhost:3000/students/${studentId}`);
+      await axios.delete(`${API_URL}/students/${studentId}`);
       alert('Alumno eliminado correctamente');
       router.push('/dashboard/gestion/alumnos');
     } catch (error: any) {

@@ -38,14 +38,16 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, []);
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
   const fetchDashboardData = async () => {
     try {
-      const studentsResponse = await axios.get('http://localhost:3000/students');
+      const studentsResponse = await axios.get(`${API_URL}/students`);
       const studentsData = studentsResponse.data;
       setStudents(studentsData);
       calculateStats(studentsData);
 
-      const reportsResponse = await axios.get('http://localhost:3000/weekly-reports');
+      const reportsResponse = await axios.get(`${API_URL}/weekly-reports`);
       setRecentReports(reportsResponse.data.slice(0, 5));
     } catch (err) {
       console.error(err);

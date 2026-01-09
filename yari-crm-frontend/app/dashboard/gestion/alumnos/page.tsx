@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import axios from 'axios';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
 interface Student {
   id: number;
   full_name: string;
@@ -34,7 +36,7 @@ export default function AlumnosPage() {
 
   const fetchStudents = async () => {
     try {
-      const response = await axios.get('http://localhost:3000/students');
+      const response = await axios.get(`${API_URL}/students`);
       setStudents(response.data);
       setLoading(false);
     } catch (error) {
@@ -89,7 +91,7 @@ export default function AlumnosPage() {
     if (!confirm(`¿Enviar formulario manual a ${studentName}?`)) return;
 
     try {
-      await axios.post(`http://localhost:3000/magic-links/send-one/${studentId}`);
+      await axios.post(`${API_URL}/magic-links/send-one/${studentId}`);
       alert('Formulario enviado correctamente');
     } catch (error) {
       alert('Error al enviar formulario');
@@ -105,7 +107,7 @@ export default function AlumnosPage() {
 
     setSaving(true);
     try {
-      await axios.post('http://localhost:3000/students', {
+      await axios.post(`${API_URL}/students`, {
         full_name: newStudent.full_name,
         email: newStudent.email,
         phone: newStudent.phone || undefined,
@@ -140,7 +142,7 @@ export default function AlumnosPage() {
 
     setSaving(true);
     try {
-      await axios.patch(`http://localhost:3000/students/${editingStudent.id}`, {
+      await axios.patch(`${API_URL}/students/${editingStudent.id}`, {
         full_name: newStudent.full_name,
         email: newStudent.email,
         phone: newStudent.phone || undefined,
@@ -164,7 +166,7 @@ export default function AlumnosPage() {
     }
 
     try {
-      await axios.delete(`http://localhost:3000/students/${studentId}`);
+      await axios.delete(`${API_URL}/students/${studentId}`);
       fetchStudents();
       alert('Alumno eliminado correctamente');
     } catch (error: any) {

@@ -25,17 +25,17 @@ export class SyncService {
   }
 
   /**
-   * 🔄 CRON JOB SEMANAL - Envía formularios cada 7 días
-   * Se ejecuta todos los lunes a las 9:00 AM (configurable)
+   * 🔄 CRON JOB SEMANAL - Envía formularios según configuración
+   * Se ejecuta diariamente a las 9:00 AM y verifica si es el día configurado
    */
-  @Cron('0 9 * * 1') // Lunes a las 9:00 AM - se puede cambiar desde config
+  @Cron('0 9 * * *') // Todos los días a las 9:00 AM
   async weeklyReportGeneration() {
-    this.logger.log('🔄 Iniciando envío semanal de formularios...');
+    this.logger.log('🔄 Verificando si es día de envío semanal...');
     
     try {
       const config = await this.systemConfigService.getConfig();
       
-      // Verificar si es el día correcto (por ahora solo lunes, pero se puede expandir)
+      // Verificar si es el día correcto según configuración
       const today = new Date();
       const dayOfWeek = today.getDay(); // 0 = domingo, 1 = lunes, etc.
       const dayMap: { [key: string]: number } = {
@@ -53,6 +53,8 @@ export class SyncService {
         this.logger.log(`⏭️ No es el día configurado (${config.sendDay}), saltando...`);
         return;
       }
+      
+      this.logger.log(`✅ Es ${config.sendDay}, iniciando envío semanal de formularios...`);
 
       // Obtener todos los estudiantes activos
       const { data: students, error } = await this.supabase
@@ -390,5 +392,75 @@ export class SyncService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 🧪 Enviar email de prueba a un estudiante específico
+   */
+  async sendTestEmailToStudent(studentId: number) {
+    try {
+      this.logger.log(`🧪 Enviando email de prueba al estudiante ID: ${studentId}`);
+      
+      // Obtener estudiante
+      const { data: student, error } = await this.supabase
+        .from('students')
+        .select('*')
+        .eq('id', studentId)
+        .single();
+
+      if (error || !student) {
+        throw new Error(`Estudiante con ID ${studentId} no encontrado`);
+      }
+
+      // Obtener configuración
+      const config = await this.systemConfigService.getConfig();
+      
+      // Generar token único
+      const token = uuidv4();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + config.expirationDays);
+
+      // Guardar magic link
+      const { error: linkError } = await this.supabase
+        .from('magic_links')
+        .insert({
+          student_id: studentId,
+          token: token,
+          status: 'pending',
+          week_start_date: new Date().toISOString(),
+          expires_at: expiresAt.toISOString(),
+        });
+
+      if (linkError) {
+        throw new Error(`Error guardando link: ${linkError.message}`);
+      }
+
+      // Enviar email
+      const magicLink = `${this.frontendUrl}/report?token=${token}`;
+      await this.gmailService.sendMagicLink(
+        student.email,
+        student.full_name,
+        magicLink,
+      );
+
+      this.logger.log(`✅ Email de prueba enviado exitosamente a ${student.email}`);
+      
+      return {
+        success: true,
+        message: `Email enviado a ${student.email}`,
+        student: {
+          id: student.id,
+          name: student.full_name,
+          email: student.email,
+        },
+        link: magicLink,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error en envío de prueba: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 }

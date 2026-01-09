@@ -1,24 +1,37 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
 
-  // Habilitar CORS para conexión desde el Frontend
+  // Obtener puerto desde variable de entorno o usar 3000 por defecto
+  const port = configService.get<number>('PORT') || 3000;
+  const nodeEnv = configService.get<string>('NODE_ENV') || 'development';
+
+  // Configurar CORS dinámicamente según entorno
+  const frontendUrl = configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+  const allowedOrigins = nodeEnv === 'production'
+    ? [frontendUrl] // En producción solo el dominio configurado
+    : ['http://localhost:3000', 'http://localhost:3001', frontendUrl]; // En desarrollo permite localhost
+
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:3001'], // Frontend puede estar en 3000 o 3001
+    origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
-  // Habilitar validaciones globales (para que funcionen los @IsString, etc.)
+  // Habilitar validaciones globales
   app.useGlobalPipes(new ValidationPipe({
-    whitelist: true, // Elimina datos extra que no estén en el DTO
-    forbidNonWhitelisted: false, // No da error si envías datos de más, solo los ignora (más seguro ahora)
+    whitelist: true,
+    forbidNonWhitelisted: false,
   }));
 
-  await app.listen(3000);
-  console.log('🚀 Backend corriendo en http://localhost:3000');
+  await app.listen(port);
+  console.log(`🚀 Backend corriendo en http://localhost:${port}`);
+  console.log(`📦 Entorno: ${nodeEnv}`);
+  console.log(`🌐 CORS permitido para: ${allowedOrigins.join(', ')}`);
 }
 bootstrap();

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import axios from 'axios';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
 interface Staff {
   id: number;
   email: string;
@@ -51,7 +53,7 @@ export default function ConfiguracionPage() {
 
   const fetchConfig = async () => {
     try {
-      const response = await axios.get('http://localhost:3000/config');
+      const response = await axios.get(`${API_URL}/config`);
       setConfig(response.data);
     } catch (error) {
       console.error('Error obteniendo configuración', error);
@@ -63,7 +65,7 @@ export default function ConfiguracionPage() {
 
   const fetchStaff = async () => {
     try {
-      const response = await axios.get('http://localhost:3000/staff');
+      const response = await axios.get(`${API_URL}/staff`);
       setStaff(response.data);
     } catch (error) {
       console.error('Error obteniendo staff', error);
@@ -79,7 +81,7 @@ export default function ConfiguracionPage() {
     setSaving(true);
     setMessage(null);
     try {
-      await axios.post('http://localhost:3000/staff', newStaff);
+      await axios.post(`${API_URL}/staff`, newStaff);
       setMessage({ type: 'success', text: 'Staff agregado correctamente' });
       setShowAddStaffModal(false);
       setNewStaff({ email: '', password: '', full_name: '' });
@@ -112,7 +114,7 @@ export default function ConfiguracionPage() {
       if (editStaff.password) {
         updateData.password = editStaff.password;
       }
-      await axios.patch(`http://localhost:3000/staff/${editingStaff.id}`, updateData);
+      await axios.patch(`${API_URL}/staff/${editingStaff.id}`, updateData);
       setMessage({ type: 'success', text: 'Staff actualizado correctamente' });
       setShowEditStaffModal(false);
       setEditingStaff(null);
@@ -132,7 +134,7 @@ export default function ConfiguracionPage() {
     }
 
     try {
-      await axios.delete(`http://localhost:3000/staff/${staffId}`);
+      await axios.delete(`${API_URL}/staff/${staffId}`);
       setMessage({ type: 'success', text: 'Staff eliminado correctamente' });
       fetchStaff();
       setTimeout(() => setMessage(null), 3000);
@@ -146,7 +148,7 @@ export default function ConfiguracionPage() {
     setMessage(null);
     
     try {
-      await axios.post('http://localhost:3000/config', config);
+      await axios.post(`${API_URL}/config`, config);
       setMessage({ type: 'success', text: 'Configuración guardada exitosamente' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {

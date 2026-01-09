@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import axios from 'axios';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
 export default function ReportPage() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -38,7 +40,7 @@ export default function ReportPage() {
 
   const validateToken = async () => {
     try {
-      const response = await axios.get(`http://localhost:3000/magic-links/validate?token=${token}`);
+      const response = await axios.get(`${API_URL}/magic-links/validate?token=${token}`);
       if (response.data.valid && response.data.student) {
         setStudentName(response.data.student.full_name);
         setLoading(false);
@@ -68,7 +70,7 @@ export default function ReportPage() {
     setSubmitting(true);
 
     try {
-      await axios.post('http://localhost:3000/weekly-reports', {
+      await axios.post(`${API_URL}/weekly-reports`, {
         token,
         answers: formData,
       });

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AppController } from './app.controller';
 
 import { StudentsModule } from './students/students.module';
 import { MagicLinksModule } from './magic-links/magic-links.module';
@@ -27,5 +28,6 @@ import { StaffModule } from './staff/staff.module';
     AuditModule,
     StaffModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

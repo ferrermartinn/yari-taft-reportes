@@ -1,20 +1,26 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class GmailService {
   private readonly logger = new Logger(GmailService.name);
-  private transporter: nodemailer.Transporter;
+  private readonly apiUrl: string;
+  private readonly apiKey: string;
 
-  constructor(private configService: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: this.configService.get<string>('GMAIL_USER'),
-        pass: this.configService.get<string>('GMAIL_APP_PASSWORD'),
-      },
-    });
+  constructor(
+    private configService: ConfigService,
+    private readonly httpService: HttpService,
+  ) {
+    this.apiUrl = this.configService.get<string>('WILDMAIL_API_URL') || 'https://yaritaft.api-us1.com';
+    this.apiKey = this.configService.get<string>('WILDMAIL_API_KEY') || '';
+    
+    if (!this.apiKey) {
+      this.logger.warn('⚠️ WILDMAIL_API_KEY no configurada. Los emails no se enviarán.');
+    } else {
+      this.logger.log(`✅ Wildmail configurado: ${this.apiUrl}`);
+    }
   }
 
   async sendMagicLink(email: string, studentName: string, magicLink: string) {
@@ -70,21 +76,143 @@ export class GmailService {
 </html>
       `;
 
-      const mailOptions = {
-        from: `"Yari Taft" <${this.configService.get<string>('GMAIL_USER')}>`,
-        to: email,
-        subject: '📊 Tu Reporte Semanal Ya Está Listo',
-        html: emailHtml,
+      const headers = {
+        'Api-Token': this.apiKey,
+        'Content-Type': 'application/json',
       };
 
-      await this.transporter.sendMail(mailOptions);
+      // Método: Crear/actualizar contacto y luego crear campaña para enviar email usando dominio verificado
+      return await this.sendViaContactAndCampaign(email, studentName, magicLink, emailHtml, headers);
 
-      this.logger.log(`✅ Email enviado exitosamente a ${email}`);
-      return { success: true };
-
-    } catch (error) {
-      this.logger.error(`❌ ERROR enviando email a ${email}: ${error.message}`);
+    } catch (error: any) {
+      this.logger.error(`❌ ERROR CRÍTICO enviando email a ${email}`);
+      this.logger.error(`📋 Error: ${error.message}`);
+      if (error.stack) {
+        this.logger.error(`📋 Stack: ${error.stack}`);
+      }
       throw error;
+    }
+  }
+
+  private async sendViaContactAndCampaign(
+    email: string,
+    studentName: string,
+    magicLink: string,
+    emailHtml: string,
+    headers: any,
+  ) {
+    try {
+      this.logger.log(`🔄 Creando contacto y enviando email usando dominio verificado...`);
+
+      // Paso 1: Crear o actualizar contacto
+      const contactUrl = `${this.apiUrl}/api/3/contacts`;
+      const contactPayload = {
+        contact: {
+          email: email,
+          firstName: studentName.split(' ')[0],
+          lastName: studentName.split(' ').slice(1).join(' ') || '',
+        },
+      };
+
+      this.logger.log(`👤 Creando/actualizando contacto: ${email}`);
+      let contactResponse;
+      try {
+        contactResponse = await firstValueFrom(
+          this.httpService.post(contactUrl, contactPayload, { headers }),
+        );
+      } catch (contactError: any) {
+        // Si el contacto ya existe (422), lo obtenemos
+        if (contactError.response?.status === 422) {
+          this.logger.log(`⚠️ Contacto ya existe, obteniendo información...`);
+          const getContactUrl = `${this.apiUrl}/api/3/contacts?email=${encodeURIComponent(email)}`;
+          contactResponse = await firstValueFrom(
+            this.httpService.get(getContactUrl, { headers }),
+          );
+        } else {
+          throw contactError;
+        }
+      }
+
+      const contactId = contactResponse.data?.contact?.id || contactResponse.data?.contacts?.[0]?.id;
+      this.logger.log(`✅ Contacto listo: ID ${contactId}`);
+
+      // Paso 2: Crear un email en ActiveCampaign
+      const createEmailUrl = `${this.apiUrl}/api/3/emails`;
+      const emailPayload = {
+        email: {
+          name: `Reporte Semanal - ${studentName} - ${Date.now()}`,
+          type: 'mime',
+          format: 'mime',
+          subject: '📊 Tu Reporte Semanal Ya Está Listo',
+          html: emailHtml,
+          fromemail: 'hola@yaritaft.com',
+          fromname: 'Yari Taft',
+        },
+      };
+
+      this.logger.log(`📝 Creando email en ActiveCampaign...`);
+      const emailResponse = await firstValueFrom(
+        this.httpService.post(createEmailUrl, emailPayload, { headers }),
+      );
+
+      const emailId = emailResponse.data?.email?.id;
+      this.logger.log(`✅ Email creado: ID ${emailId}`);
+
+      // Paso 3: Crear y enviar campaña inmediatamente (usa el dominio verificado)
+      const createCampaignUrl = `${this.apiUrl}/api/3/campaigns`;
+      const campaignPayload = {
+        campaign: {
+          type: 'single',
+          name: `Reporte Semanal - ${studentName} - ${Date.now()}`,
+          sdate: new Date().toISOString(),
+          status: 1, // Activa e inmediata
+          public: 0,
+          tracklinks: 'all',
+          trackreads: 1,
+          htmlunsub: 1,
+          textunsub: 0,
+          p: { [contactId]: contactId }, // Lista de contactos
+          m: [emailId], // Lista de emails
+        },
+      };
+
+      this.logger.log(`📤 Creando y enviando campaña usando dominio verificado...`);
+      const campaignResponse = await firstValueFrom(
+        this.httpService.post(createCampaignUrl, campaignPayload, { headers }),
+      );
+
+      const campaignId = campaignResponse.data?.campaign?.id;
+      this.logger.log(`✅ Campaña creada y enviada: ID ${campaignId}`);
+      this.logger.log(`✅ Email enviado exitosamente a ${email} vía ActiveCampaign usando dominio verificado`);
+
+      return {
+        success: true,
+        data: {
+          contactId,
+          emailId,
+          campaignId,
+          message: 'Email enviado usando dominio verificado',
+        },
+      };
+
+    } catch (error: any) {
+      const errorStatus = error.response?.status;
+      const errorData = error.response?.data;
+      const errorMessage = errorData?.message || error.message;
+
+      this.logger.error(`❌ Error enviando email (Status: ${errorStatus})`);
+      this.logger.error(`📋 Mensaje: ${errorMessage}`);
+      this.logger.error(`📋 Detalles: ${JSON.stringify(errorData || {})}`);
+
+      if (errorStatus === 401 || errorStatus === 403) {
+        this.logger.error(`⚠️ Error de autenticación - Verifica API Key`);
+      }
+
+      if (errorStatus === 404) {
+        this.logger.error(`⚠️ Endpoint no encontrado - Verifica que tu plan de ActiveCampaign incluya esta funcionalidad`);
+      }
+
+      throw new Error(`Error enviando email: ${errorMessage} (Status: ${errorStatus})`);
     }
   }
 }

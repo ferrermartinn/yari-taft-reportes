@@ -55,7 +55,25 @@ export class MagicLinksService {
 
     const link = `${this.frontendUrl}/report?token=${token}`;
 
-    return this.gmailService.sendMagicLink(student.email, student.full_name, link);
+    try {
+      const result = await this.gmailService.sendMagicLink(student.email, student.full_name, link);
+      this.logger.log(`✅ Email enviado exitosamente a ${student.email}`);
+      return {
+        success: true,
+        message: `Email enviado a ${student.email}`,
+        link: link,
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error enviando email: ${error.message}`);
+      // Aún así retornamos el link generado para que el usuario pueda usarlo
+      return {
+        success: false,
+        message: `Error enviando email: ${error.message}. El link fue generado pero no se pudo enviar.`,
+        link: link,
+        error: error.message,
+      };
+    }
   }
 
   async validateToken(token: string) {

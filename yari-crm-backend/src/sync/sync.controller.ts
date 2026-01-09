@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param } from '@nestjs/common';
 import { SyncService } from './sync.service';
 
 @Controller('sync')
@@ -48,5 +48,17 @@ export class SyncController {
       return { error: 'Email es requerido' };
     }
     return this.syncService.generateTestLink(email);
+  }
+
+  /**
+   * 🧪 Enviar email de prueba a un estudiante específico (por ID)
+   */
+  @Post('test-send/:studentId')
+  async testSendToStudent(@Param('studentId') studentId: string) {
+    const id = parseInt(studentId, 10);
+    if (isNaN(id)) {
+      return { error: 'studentId debe ser un número válido' };
+    }
+    return this.syncService.sendTestEmailToStudent(id);
   }
 }
