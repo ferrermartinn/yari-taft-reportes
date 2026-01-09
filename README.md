@@ -112,9 +112,15 @@ SUPABASE_URL=https://tu-proyecto.supabase.co
 SUPABASE_KEY=tu-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=tu-service-role-key
 
-# Postmark (para emails transaccionales)
+# Email Provider (elige uno - Postmark tiene prioridad si ambos están configurados):
+# Opción 1: Postmark (recomendado)
 POSTMARK_API_KEY=tu-postmark-api-key
 POSTMARK_FROM_EMAIL=hola@yaritaft.com
+
+# Opción 2: ActiveCampaign/Wildmail
+WILDMAIL_API_URL=https://yaritaft.api-us1.com
+WILDMAIL_API_KEY=tu-api-key-de-activecampaign
+WILDMAIL_FROM_EMAIL=hola@yaritaft.com
 
 # Frontend URL
 FRONTEND_URL=http://localhost:3000
