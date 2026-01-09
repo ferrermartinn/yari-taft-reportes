@@ -17,15 +17,17 @@ interface Student {
 
 interface Report {
   id: number;
-  week_date: string;
-  submitted_at: string;
-  procesos_activos: number;
-  entrevistas_rrhh: number;
-  entrevistas_tecnicas: number;
-  challenges: number;
-  rechazos: number;
-  ghosting: number;
-  propuestas: number;
+  week_date?: string;
+  submitted_at?: string;
+  created_at: string;
+  answers?: any;
+  procesos_activos?: number;
+  entrevistas_rrhh?: number;
+  entrevistas_tecnicas?: number;
+  challenges?: number;
+  rechazos?: number;
+  ghosting?: number;
+  propuestas?: number;
   resumen?: string;
   bloqueos?: string;
 }
@@ -37,9 +39,13 @@ export default function StudentProfilePage() {
 
   const [student, setStudent] = useState<Student | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
+  const [totalLinksSent, setTotalLinksSent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('info');
   const [notes, setNotes] = useState('');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editData, setEditData] = useState({ full_name: '', email: '', phone: '' });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -47,17 +53,32 @@ export default function StudentProfilePage() {
 
   const fetchData = async () => {
     try {
-      const [studentRes, reportsRes] = await Promise.all([
+      const [studentRes, reportsRes, auditRes] = await Promise.all([
         axios.get(`http://localhost:3000/students/${studentId}`),
-        axios.get(`http://localhost:3000/weekly-reports/student/${studentId}`)
+        axios.get(`http://localhost:3000/weekly-reports/student/${studentId}`),
+        axios.get('http://localhost:3000/audit')
       ]);
       setStudent(studentRes.data);
       setReports(reportsRes.data);
+      
+      // Contar links enviados a este estudiante
+      const linksForStudent = auditRes.data.links?.filter((link: any) => 
+        link.student_id === parseInt(studentId)
+      ) || [];
+      setTotalLinksSent(linksForStudent.length);
+      
       setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
       setLoading(false);
     }
+  };
+
+  const calculateSubmissionRate = () => {
+    if (totalLinksSent === 0) return { percentage: 0, text: '0/0 (0%)' };
+    const submitted = reports.length;
+    const percentage = Math.round((submitted / totalLinksSent) * 100);
+    return { percentage, text: `${submitted}/${totalLinksSent} (${percentage}%)` };
   };
 
   const handleSendForm = async () => {
@@ -69,6 +90,54 @@ export default function StudentProfilePage() {
       alert('Formulario enviado correctamente');
     } catch (error) {
       alert('Error al enviar formulario');
+    }
+  };
+
+  const handleEdit = () => {
+    if (!student) return;
+    setEditData({
+      full_name: student.full_name,
+      email: student.email,
+      phone: student.phone || '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!editData.full_name || !editData.email) {
+      alert('Por favor completa nombre y email');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await axios.patch(`http://localhost:3000/students/${studentId}`, {
+        full_name: editData.full_name,
+        email: editData.email,
+        phone: editData.phone || undefined,
+      });
+      setShowEditModal(false);
+      fetchData();
+      alert('Alumno actualizado correctamente');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Error al actualizar alumno');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!student) return;
+    if (!confirm(`¿Estás seguro de eliminar a ${student.full_name}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      await axios.delete(`http://localhost:3000/students/${studentId}`);
+      alert('Alumno eliminado correctamente');
+      router.push('/dashboard/gestion/alumnos');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Error al eliminar alumno');
     }
   };
 
@@ -85,12 +154,33 @@ export default function StudentProfilePage() {
   };
 
   const calculateTotalMetrics = () => {
-    return reports.reduce((acc, report) => ({
-      procesos: acc.procesos + report.procesos_activos,
-      ofertas: acc.ofertas + report.propuestas,
-      rechazos: acc.rechazos + report.rechazos,
-      sinRespuesta: acc.sinRespuesta + report.ghosting,
-    }), { procesos: 0, ofertas: 0, rechazos: 0, sinRespuesta: 0 });
+    return reports.reduce((acc, report) => {
+      const procesos = report.procesos_activos || report.answers?.procesos_activos || 0;
+      const ofertas = report.propuestas || report.answers?.propuestas || 0;
+      const rechazos = report.rechazos || report.answers?.rechazos || 0;
+      const sinRespuesta = report.ghosting || report.answers?.ghosting || 0;
+      
+      return {
+        procesos: acc.procesos + procesos,
+        ofertas: acc.ofertas + ofertas,
+        rechazos: acc.rechazos + rechazos,
+        sinRespuesta: acc.sinRespuesta + sinRespuesta,
+      };
+    }, { procesos: 0, ofertas: 0, rechazos: 0, sinRespuesta: 0 });
+  };
+
+  const getReportData = (report: Report) => {
+    return {
+      procesos_activos: report.procesos_activos || report.answers?.procesos_activos || 0,
+      entrevistas_rrhh: report.entrevistas_rrhh || report.answers?.entrevistas_rrhh || 0,
+      entrevistas_tecnicas: report.entrevistas_tecnicas || report.answers?.entrevistas_tecnicas || 0,
+      challenges: report.challenges || report.answers?.challenges || 0,
+      rechazos: report.rechazos || report.answers?.rechazos || 0,
+      ghosting: report.ghosting || report.answers?.ghosting || 0,
+      propuestas: report.propuestas || report.answers?.propuestas || 0,
+      resumen: report.resumen || report.answers?.resumen || '',
+      bloqueos: report.bloqueos || report.answers?.bloqueos || '',
+    };
   };
 
   const totalMetrics = calculateTotalMetrics();
@@ -113,13 +203,12 @@ export default function StudentProfilePage() {
   }
 
   const status = getStatusInfo(student.last_interaction_date);
-  const lastReport = reports[0];
 
   const tabs = [
-    { id: 'info', label: 'Información Básica', icon: '📋' },
-    { id: 'bitacora', label: 'Bitácora', icon: '📝' },
-    { id: 'metricas', label: 'Métricas y Reportes', icon: '📊' },
-    { id: 'auditoria', label: 'Auditoría', icon: '🔍' },
+    { id: 'info', label: 'Información Básica' },
+    { id: 'bitacora', label: 'Bitácora' },
+    { id: 'metricas', label: 'Métricas y Reportes' },
+    { id: 'auditoria', label: 'Auditoría' },
   ];
 
   return (
@@ -176,7 +265,7 @@ export default function StudentProfilePage() {
                 <p style={{ fontSize: '0.875rem', color: '#6B7280', margin: 0 }}>
                   {student.phone || 'Sin teléfono'}
                 </p>
-                <div style={{ marginTop: '0.75rem' }}>
+                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                   <span style={{
                     padding: '0.375rem 0.75rem',
                     borderRadius: '9999px',
@@ -187,28 +276,96 @@ export default function StudentProfilePage() {
                   }}>
                     {status.label}
                   </span>
+                  {(() => {
+                    const submissionRate = calculateSubmissionRate();
+                    const color = submissionRate.percentage >= 75 ? '#10B981' : submissionRate.percentage >= 50 ? '#F59E0B' : '#EF4444';
+                    return (
+                      <span style={{
+                        padding: '0.375rem 0.75rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.875rem',
+                        fontWeight: '500',
+                        backgroundColor: `${color}20`,
+                        color: color
+                      }}>
+                        Formularios: {submissionRate.text}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
-            <button
-              onClick={handleSendForm}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#2563EB',
-                color: 'white',
-                border: 'none',
-                borderRadius: '0.5rem',
-                fontSize: '0.875rem',
-                fontWeight: '500',
-                cursor: 'pointer',
-                transition: 'background-color 0.2s',
-                whiteSpace: 'nowrap'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1D4ED8'}
-              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563EB'}
-            >
-              📧 Enviar Formulario Manualmente
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleSendForm}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: '#2563EB',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1D4ED8'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563EB'}
+              >
+                Enviar Formulario
+              </button>
+              <button
+                onClick={handleEdit}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: 'white',
+                  color: '#374151',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = '#F9FAFB';
+                  e.currentTarget.style.borderColor = '#9CA3AF';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = 'white';
+                  e.currentTarget.style.borderColor = '#D1D5DB';
+                }}
+              >
+                Editar
+              </button>
+              <button
+                onClick={handleDelete}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: 'white',
+                  color: '#DC2626',
+                  border: '1px solid #FCA5A5',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = '#FEE2E2';
+                  e.currentTarget.style.borderColor = '#DC2626';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = 'white';
+                  e.currentTarget.style.borderColor = '#FCA5A5';
+                }}
+              >
+                Eliminar
+              </button>
+            </div>
           </div>
         </div>
 
@@ -230,7 +387,7 @@ export default function StudentProfilePage() {
                 transition: 'all 0.2s'
               }}
             >
-              {tab.icon} {tab.label}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -314,10 +471,10 @@ export default function StudentProfilePage() {
         {/* TAB 3: Métricas y Reportes */}
         {activeTab === 'metricas' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Donut Chart */}
+            {/* Resumen General con Gráfico */}
             <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB', padding: '2rem' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0, marginBottom: '1.5rem' }}>
-                Distribución de Actividad
+                Resumen General de Actividad
               </h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: '3rem', flexWrap: 'wrap' }}>
                 <svg width="200" height="200" viewBox="0 0 200 200">
@@ -345,118 +502,152 @@ export default function StudentProfilePage() {
               </div>
             </div>
 
-            {/* Último Reporte */}
-            {lastReport && (
-              <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB', padding: '2rem' }}>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0, marginBottom: '1.5rem' }}>
-                  Último Reporte Recibido
-                </h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                  {[
-                    { label: 'Procesos Activos', value: lastReport.procesos_activos, icon: '🎯' },
-                    { label: 'Entrevistas RRHH', value: lastReport.entrevistas_rrhh, icon: '👥' },
-                    { label: 'Entrevistas Técnicas', value: lastReport.entrevistas_tecnicas, icon: '💻' },
-                    { label: 'Challenges', value: lastReport.challenges, icon: '🧩' },
-                    { label: 'Rechazos', value: lastReport.rechazos, icon: '❌' },
-                    { label: 'Ghosting', value: lastReport.ghosting, icon: '👻' },
-                    { label: 'Propuestas', value: lastReport.propuestas, icon: '🎉' },
-                  ].map((metric, idx) => (
-                    <div key={idx} style={{
-                      backgroundColor: '#F9FAFB',
-                      borderRadius: '0.5rem',
-                      padding: '1rem',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>{metric.icon}</div>
-                      <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#111827', marginBottom: '0.25rem' }}>
-                        {metric.value}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>
-                        {metric.label}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {lastReport.resumen && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <p style={{ fontSize: '0.875rem', fontWeight: '500', color: '#111827', margin: 0, marginBottom: '0.5rem' }}>
-                      📝 Resumen:
-                    </p>
-                    <p style={{ fontSize: '0.875rem', color: '#6B7280', margin: 0 }}>
-                      {lastReport.resumen}
-                    </p>
-                  </div>
-                )}
-                {lastReport.bloqueos && (
-                  <div style={{
-                    backgroundColor: '#FEF3C7',
-                    border: '1px solid #FCD34D',
-                    borderRadius: '0.5rem',
-                    padding: '1rem'
-                  }}>
-                    <p style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400E', margin: 0, marginBottom: '0.5rem' }}>
-                      🚧 Bloqueos:
-                    </p>
-                    <p style={{ fontSize: '0.875rem', color: '#92400E', margin: 0 }}>
-                      {lastReport.bloqueos}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Historial */}
+            {/* Reportes Semanales Individuales */}
             <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB', padding: '2rem' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0, marginBottom: '1.5rem' }}>
-                Historial de Reportes
+                Reportes Semanales ({reports.length})
               </h2>
               {reports.length === 0 ? (
                 <p style={{ color: '#6B7280', textAlign: 'center', padding: '2rem' }}>
                   No hay reportes registrados
                 </p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {reports.map((report) => (
-                    <details key={report.id} style={{
-                      backgroundColor: '#F9FAFB',
-                      borderRadius: '0.5rem',
-                      border: '1px solid #E5E7EB',
-                      padding: '1rem'
-                    }}>
-                      <summary style={{ fontSize: '0.875rem', fontWeight: '500', color: '#111827', cursor: 'pointer' }}>
-                        📅 Semana {new Date(report.week_date).toLocaleDateString('es-AR')} - Enviado {new Date(report.submitted_at).toLocaleString('es-AR')}
-                      </summary>
-                      <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem' }}>
-                        {[
-                          { label: 'Procesos', value: report.procesos_activos, icon: '🎯' },
-                          { label: 'RRHH', value: report.entrevistas_rrhh, icon: '👥' },
-                          { label: 'Técnicas', value: report.entrevistas_tecnicas, icon: '💻' },
-                          { label: 'Challenges', value: report.challenges, icon: '🧩' },
-                          { label: 'Rechazos', value: report.rechazos, icon: '❌' },
-                          { label: 'Ghosting', value: report.ghosting, icon: '👻' },
-                          { label: 'Ofertas', value: report.propuestas, icon: '🎉' },
-                        ].map((m, i) => (
-                          <div key={i} style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '1.25rem' }}>{m.icon}</div>
-                            <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#111827' }}>{m.value}</div>
-                            <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>{m.label}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  {reports.map((report, index) => {
+                    const reportData = getReportData(report);
+                    const reportDate = report.week_date || report.submitted_at || report.created_at;
+                    return (
+                      <div key={report.id} style={{
+                        backgroundColor: '#F9FAFB',
+                        borderRadius: '0.5rem',
+                        border: '1px solid #E5E7EB',
+                        padding: '1.5rem',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#F3F4F6';
+                        e.currentTarget.style.borderColor = '#D1D5DB';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#F9FAFB';
+                        e.currentTarget.style.borderColor = '#E5E7EB';
+                      }}
+                      >
+                        {/* Header del Reporte */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid #E5E7EB' }}>
+                          <div>
+                            <h3 style={{ fontSize: '1rem', fontWeight: '600', color: '#111827', margin: 0 }}>
+                              Reporte Semanal #{reports.length - index}
+                            </h3>
+                            <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: '4px 0 0 0' }}>
+                              {new Date(reportDate).toLocaleDateString('es-AR', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              })}
+                            </p>
                           </div>
-                        ))}
+                          <span style={{
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            backgroundColor: '#D1FAE5',
+                            color: '#065F46',
+                            border: '1px solid #A7F3D0'
+                          }}>
+                            Completado
+                          </span>
+                        </div>
+
+                        {/* Métricas del Reporte */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <h4 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#374151', margin: '0 0 1rem 0' }}>
+                            Métricas de la Semana
+                          </h4>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+                            {[
+                              { label: 'Procesos Activos', value: reportData.procesos_activos, color: '#3B82F6' },
+                              { label: 'Entrevistas RRHH', value: reportData.entrevistas_rrhh, color: '#8B5CF6' },
+                              { label: 'Entrevistas Técnicas', value: reportData.entrevistas_tecnicas, color: '#10B981' },
+                              { label: 'Challenges', value: reportData.challenges, color: '#F59E0B' },
+                              { label: 'Rechazos', value: reportData.rechazos, color: '#EF4444' },
+                              { label: 'Ghosting', value: reportData.ghosting, color: '#6B7280' },
+                              { label: 'Propuestas/Ofertas', value: reportData.propuestas, color: '#10B981' },
+                            ].map((metric, idx) => (
+                              <div key={idx} style={{
+                                backgroundColor: 'white',
+                                borderRadius: '8px',
+                                padding: '1.25rem',
+                                textAlign: 'center',
+                                border: `1px solid ${metric.color}30`,
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = metric.color;
+                                e.currentTarget.style.boxShadow = `0 4px 6px -1px ${metric.color}20`;
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = `${metric.color}30`;
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                              >
+                                <div style={{ 
+                                  fontSize: '2rem', 
+                                  fontWeight: '700', 
+                                  color: metric.color, 
+                                  marginBottom: '0.5rem',
+                                  lineHeight: '1'
+                                }}>
+                                  {metric.value}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#6B7280', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  {metric.label}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Resumen y Bloqueos */}
+                        {(reportData.resumen || reportData.bloqueos) && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {reportData.resumen && (
+                              <div style={{
+                                backgroundColor: 'white',
+                                borderRadius: '0.5rem',
+                                padding: '1rem',
+                                border: '1px solid #E5E7EB'
+                              }}>
+                                <p style={{ fontSize: '0.75rem', fontWeight: '600', color: '#374151', margin: '0 0 0.5rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Resumen de la Semana
+                                </p>
+                                <p style={{ fontSize: '0.875rem', color: '#111827', margin: 0, lineHeight: '1.6' }}>
+                                  {reportData.resumen}
+                                </p>
+                              </div>
+                            )}
+                            {reportData.bloqueos && (
+                              <div style={{
+                                backgroundColor: '#FEF3C7',
+                                borderRadius: '0.5rem',
+                                padding: '1rem',
+                                border: '1px solid #FCD34D'
+                              }}>
+                                <p style={{ fontSize: '0.75rem', fontWeight: '600', color: '#92400E', margin: '0 0 0.5rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Bloqueos / Necesidades de Ayuda
+                                </p>
+                                <p style={{ fontSize: '0.875rem', color: '#92400E', margin: 0, lineHeight: '1.6' }}>
+                                  {reportData.bloqueos}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      {report.resumen && (
-                        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: 'white', borderRadius: '0.375rem' }}>
-                          <p style={{ fontSize: '0.75rem', fontWeight: '500', color: '#6B7280', margin: 0, marginBottom: '0.25rem' }}>Resumen:</p>
-                          <p style={{ fontSize: '0.875rem', color: '#111827', margin: 0 }}>{report.resumen}</p>
-                        </div>
-                      )}
-                      {report.bloqueos && (
-                        <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: '#FEF3C7', borderRadius: '0.375rem' }}>
-                          <p style={{ fontSize: '0.75rem', fontWeight: '500', color: '#92400E', margin: 0, marginBottom: '0.25rem' }}>Bloqueos:</p>
-                          <p style={{ fontSize: '0.875rem', color: '#92400E', margin: 0 }}>{report.bloqueos}</p>
-                        </div>
-                      )}
-                    </details>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -510,6 +701,129 @@ export default function StudentProfilePage() {
           </div>
         )}
       </div>
+
+      {/* Modal Editar Alumno */}
+      {showEditModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }} onClick={() => {
+          setShowEditModal(false);
+          setEditData({ full_name: '', email: '', phone: '' });
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            padding: '24px',
+            width: '90%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', margin: '0 0 24px 0' }}>
+              Editar Alumno
+            </h2>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Nombre Completo *
+                </label>
+                <input
+                  type="text"
+                  value={editData.full_name}
+                  onChange={(e) => setEditData({ ...editData, full_name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  value={editData.email}
+                  onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Teléfono (opcional)
+                </label>
+                <input
+                  type="tel"
+                  value={editData.phone}
+                  onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+              <button
+                onClick={handleUpdate}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  backgroundColor: saving ? '#93C5FD' : '#2563EB',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '500',
+                  cursor: saving ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {saving ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditData({ full_name: '', email: '', phone: '' });
+                }}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: 'white',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '8px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

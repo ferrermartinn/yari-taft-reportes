@@ -1,22 +1,26 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigService as NestConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import { GmailService } from '../mail/gmail.service';
+import { ConfigService } from '../config/config.service';
 
 @Injectable()
 export class MagicLinksService {
   private supabase: SupabaseClient;
   private readonly logger = new Logger(MagicLinksService.name);
+  private frontendUrl: string;
 
   constructor(
-    private configService: ConfigService,
+    private nestConfigService: NestConfigService,
     private gmailService: GmailService,
+    private systemConfigService: ConfigService,
   ) {
     this.supabase = createClient(
-      this.configService.get<string>('SUPABASE_URL')!,
-      this.configService.get<string>('SUPABASE_KEY')!,
+      this.nestConfigService.get<string>('SUPABASE_URL')!,
+      this.nestConfigService.get<string>('SUPABASE_KEY')!,
     );
+    this.frontendUrl = this.nestConfigService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
   }
 
   async sendLinkToStudent(studentId: number) {
@@ -28,17 +32,20 @@ export class MagicLinksService {
 
     if (!student) throw new BadRequestException('Alumno no encontrado');
 
+    // Obtener configuración para días de expiración
+    const config = await this.systemConfigService.getConfig();
+    
     const token = uuidv4();
     const today = new Date();
-    const nextWeek = new Date();
-    nextWeek.setDate(today.getDate() + 7);
+    const expiresAt = new Date();
+    expiresAt.setDate(today.getDate() + config.expirationDays);
 
     const { error } = await this.supabase.from('magic_links').insert({
       student_id: studentId,
       token: token,
       status: 'pending',
       week_start_date: today,
-      expires_at: nextWeek,
+      expires_at: expiresAt,
     });
 
     if (error) {
@@ -46,7 +53,7 @@ export class MagicLinksService {
       throw new BadRequestException(`Error DB: ${error.message}`);
     }
 
-    const link = `http://localhost:3001/report?token=${token}`;
+    const link = `${this.frontendUrl}/report?token=${token}`;
 
     return this.gmailService.sendMagicLink(student.email, student.full_name, link);
   }
@@ -59,13 +66,13 @@ export class MagicLinksService {
       .single();
 
     if (error || !data) {
-      return { valid: false, message: 'Token inválido o no encontrado' };
+      return { valid: false, message: 'Token inválido o no encontrado', student: null };
     }
 
     if (new Date(data.expires_at) < new Date()) {
-      return { valid: false, message: 'El enlace ha caducado. Pide uno nuevo.' };
+      return { valid: false, message: 'El enlace ha caducado. Pide uno nuevo.', student: null };
     }
 
-    return { valid: true, data };
+    return { valid: true, data, student: data.student };
   }
 }

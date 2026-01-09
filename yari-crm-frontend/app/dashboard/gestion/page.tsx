@@ -11,11 +11,29 @@ export default function GestionPage() {
   }, [router]);
 
   return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-300 border-t-blue-600 mb-3 mx-auto"></div>
-        <p className="text-sm text-gray-600">Redirigiendo...</p>
+    <div style={{ 
+      height: '100%', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: '40px',
+          height: '40px',
+          border: '2px solid #D1D5DB',
+          borderTopColor: '#2563EB',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite',
+          margin: '0 auto 12px'
+        }}></div>
+        <p style={{ fontSize: '14px', color: '#4B5563' }}>Redirigiendo...</p>
       </div>
+      <style jsx>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

@@ -10,19 +10,37 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    if (email === 'admin@yaritaft.com' && password === 'admin123') {
+    try {
+      const response = await fetch('http://localhost:3000/staff/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Credenciales incorrectas');
+      }
+
+      const staff = await response.json();
+      
       if (typeof window !== 'undefined') {
         localStorage.setItem('isAuthenticated', 'true');
-        localStorage.setItem('userEmail', email);
+        localStorage.setItem('userEmail', staff.email);
+        localStorage.setItem('userName', staff.full_name);
+        localStorage.setItem('userId', staff.id.toString());
       }
+      
       router.push('/dashboard');
-    } else {
-      setError('Credenciales incorrectas');
+    } catch (err: any) {
+      setError(err.message || 'Credenciales incorrectas');
       setLoading(false);
     }
   };

@@ -1,317 +1,415 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import axios from 'axios';
 
-export default function ConfiguracionPage() {
-  const [config, setConfig] = useState({
-    sendDay: 'monday',
-    sendTime: '09:00',
-    frequency: 'weekly',
-    expirationDays: 7,
-    reminderEnabled: true,
-    reminderDays: 3,
-  });
+interface Link {
+  id: number;
+  token: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  student: {
+    full_name: string;
+    email: string;
+  };
+}
 
-  const handleSave = () => {
-    alert('Configuración guardada (funcionalidad en desarrollo)');
+interface Report {
+  id: number;
+  created_at: string;
+  answers: any;
+  student: {
+    full_name: string;
+    email: string;
+  };
+}
+
+interface AuditData {
+  links: Link[];
+  reports: Report[];
+  failedReports: Link[];
+  students: any[];
+  stats: {
+    totalLinks: number;
+    totalReports: number;
+    totalStudents: number;
+    pendingLinks: number;
+    completedLinks: number;
+    expiredLinks: number;
+    failedReports: number;
+  };
+}
+
+export default function AuditoriaPage() {
+  const [auditData, setAuditData] = useState<AuditData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'links' | 'reports' | 'failed' | 'students'>('links');
+
+  useEffect(() => {
+    fetchAuditData();
+  }, []);
+
+  const fetchAuditData = async () => {
+    try {
+      const response = await axios.get('http://localhost:3000/audit');
+      setAuditData(response.data);
+    } catch (error) {
+      console.error('Error obteniendo auditoría', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const weekDays = [
-    { value: 'monday', label: 'Lunes' },
-    { value: 'tuesday', label: 'Martes' },
-    { value: 'wednesday', label: 'Miércoles' },
-    { value: 'thursday', label: 'Jueves' },
-    { value: 'friday', label: 'Viernes' },
-    { value: 'saturday', label: 'Sábado' },
-    { value: 'sunday', label: 'Domingo' },
-  ];
+  const getStatusBadge = (status: string) => {
+    const styles: { [key: string]: any } = {
+      pending: { bg: '#FEF3C7', color: '#92400E', label: 'Pendiente' },
+      completed: { bg: '#D1FAE5', color: '#065F46', label: 'Completado' },
+      expired: { bg: '#FEE2E2', color: '#991B1B', label: 'Expirado' },
+    };
+    const style = styles[status] || { bg: '#F3F4F6', color: '#374151', label: status };
+    return (
+      <span style={{
+        padding: '4px 12px',
+        borderRadius: '9999px',
+        fontSize: '12px',
+        fontWeight: '500',
+        backgroundColor: style.bg,
+        color: style.color
+      }}>
+        {style.label}
+      </span>
+    );
+  };
+
+  const isExpired = (expiresAt: string) => {
+    return new Date(expiresAt) < new Date();
+  };
+
+  if (loading) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '2px solid #D1D5DB',
+            borderTopColor: '#2563EB',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 12px'
+          }}></div>
+          <p style={{ fontSize: '14px', color: '#4B5563' }}>Cargando auditoría...</p>
+        </div>
+        <style jsx>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (!auditData) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: '#DC2626' }}>Error cargando auditoría</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: '100%', overflow: 'auto' }}>
       {/* Header */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #E5E7EB' }}>
-        <div style={{ padding: '2rem' }}>
-          <h1 style={{ fontSize: '1.875rem', fontWeight: '600', color: '#111827', margin: 0 }}>
-            Configuración de Formularios
+        <div style={{ padding: '32px 32px 24px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '600', color: '#111827', margin: 0 }}>
+            Auditoría de Envíos
           </h1>
-          <p style={{ fontSize: '0.875rem', color: '#6B7280', marginTop: '0.25rem', marginBottom: 0 }}>
-            Ajusta el envío automático de reportes semanales
+          <p style={{ fontSize: '14px', color: '#4B5563', marginTop: '4px', marginBottom: 0 }}>
+            Historial completo de envíos, links y reportes
           </p>
         </div>
       </div>
 
-      <div style={{ padding: '2rem' }}>
-        <div style={{ maxWidth: '48rem' }}>
-          {/* Envío Automático */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB', padding: '1.5rem', marginBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#111827', margin: 0, marginBottom: '1.5rem' }}>
-              Envío Automático
-            </h2>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              {/* Día de envío */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                  Día de envío
-                </label>
-                <select
-                  value={config.sendDay}
-                  onChange={(e) => setConfig({ ...config, sendDay: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '0.625rem 1rem',
-                    border: '1px solid #D1D5DB',
-                    borderRadius: '0.5rem',
-                    fontSize: '0.875rem'
-                  }}
-                >
-                  {weekDays.map((day) => (
-                    <option key={day.value} value={day.value}>
-                      {day.label}
-                    </option>
-                  ))}
-                </select>
-                <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: 0, marginTop: '0.25rem' }}>
-                  Los formularios se enviarán automáticamente cada {weekDays.find(d => d.value === config.sendDay)?.label}
-                </p>
-              </div>
-
-              {/* Hora de envío */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                  Hora de envío
-                </label>
-                <input
-                  type="time"
-                  value={config.sendTime}
-                  onChange={(e) => setConfig({ ...config, sendTime: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '0.625rem 1rem',
-                    border: '1px solid #D1D5DB',
-                    borderRadius: '0.5rem',
-                    fontSize: '0.875rem'
-                  }}
-                />
-                <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: 0, marginTop: '0.25rem' }}>
-                  Los emails se enviarán a las {config.sendTime} (hora de Argentina)
-                </p>
-              </div>
-
-              {/* Frecuencia */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                  Frecuencia
-                </label>
-                <select
-                  value={config.frequency}
-                  onChange={(e) => setConfig({ ...config, frequency: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '0.625rem 1rem',
-                    border: '1px solid #D1D5DB',
-                    borderRadius: '0.5rem',
-                    fontSize: '0.875rem'
-                  }}
-                >
-                  <option value="weekly">Semanal</option>
-                  <option value="biweekly">Quincenal</option>
-                  <option value="monthly">Mensual</option>
-                </select>
-              </div>
-            </div>
+      <div style={{ padding: '32px' }}>
+        {/* Stats Cards */}
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+          gap: '16px', 
+          marginBottom: '32px' 
+        }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #E5E7EB', padding: '20px' }}>
+            <p style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280', margin: '0 0 8px 0' }}>Total Links</p>
+            <p style={{ fontSize: '24px', fontWeight: '600', color: '#111827', margin: 0 }}>{auditData.stats.totalLinks}</p>
           </div>
-
-          {/* Expiración de Links */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB', padding: '1.5rem', marginBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#111827', margin: 0, marginBottom: '1.5rem' }}>
-              Expiración de Links
-            </h2>
-            
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                Días de validez del link
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="30"
-                value={config.expirationDays}
-                onChange={(e) => setConfig({ ...config, expirationDays: parseInt(e.target.value) || 7 })}
-                style={{
-                  width: '100%',
-                  padding: '0.625rem 1rem',
-                  border: '1px solid #D1D5DB',
-                  borderRadius: '0.5rem',
-                  fontSize: '0.875rem'
-                }}
-              />
-              <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: 0, marginTop: '0.25rem' }}>
-                Los links expirarán después de {config.expirationDays} días
-              </p>
-            </div>
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #E5E7EB', padding: '20px' }}>
+            <p style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280', margin: '0 0 8px 0' }}>Pendientes</p>
+            <p style={{ fontSize: '24px', fontWeight: '600', color: '#D97706', margin: 0 }}>{auditData.stats.pendingLinks}</p>
           </div>
-
-          {/* Recordatorios */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB', padding: '1.5rem', marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#111827', margin: 0 }}>
-                  Recordatorios Automáticos
-                </h2>
-                <p style={{ fontSize: '0.875rem', color: '#6B7280', marginTop: '0.25rem', marginBottom: 0 }}>
-                  Enviar recordatorios a alumnos que no han respondido
-                </p>
-              </div>
-              <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={config.reminderEnabled}
-                  onChange={(e) => setConfig({ ...config, reminderEnabled: e.target.checked })}
-                  style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
-                />
-                <div style={{
-                  width: '2.75rem',
-                  height: '1.5rem',
-                  backgroundColor: config.reminderEnabled ? '#2563EB' : '#D1D5DB',
-                  borderRadius: '9999px',
-                  position: 'relative',
-                  transition: 'background-color 0.2s'
-                }}>
-                  <div style={{
-                    width: '1.25rem',
-                    height: '1.25rem',
-                    backgroundColor: 'white',
-                    borderRadius: '9999px',
-                    position: 'absolute',
-                    top: '0.125rem',
-                    left: config.reminderEnabled ? '1.375rem' : '0.125rem',
-                    transition: 'left 0.2s'
-                  }} />
-                </div>
-              </label>
-            </div>
-
-            {config.reminderEnabled && (
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                  Enviar recordatorio después de
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <input
-                    type="number"
-                    min="1"
-                    max="7"
-                    value={config.reminderDays || 3}
-                    onChange={(e) => setConfig({ ...config, reminderDays: parseInt(e.target.value) || 3 })}
-                    style={{
-                      width: '6rem',
-                      padding: '0.625rem 1rem',
-                      border: '1px solid #D1D5DB',
-                      borderRadius: '0.5rem',
-                      fontSize: '0.875rem'
-                    }}
-                  />
-                  <span style={{ fontSize: '0.875rem', color: '#6B7280' }}>días sin respuesta</span>
-                </div>
-              </div>
-            )}
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #E5E7EB', padding: '20px' }}>
+            <p style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280', margin: '0 0 8px 0' }}>Completados</p>
+            <p style={{ fontSize: '24px', fontWeight: '600', color: '#059669', margin: 0 }}>{auditData.stats.completedLinks}</p>
           </div>
-
-          {/* Estado Automático */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB', padding: '1.5rem', marginBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#111827', margin: 0, marginBottom: '1rem' }}>
-              Cambio de Estado Automático
-            </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '0.75rem',
-                padding: '1rem',
-                backgroundColor: '#FEF3C7',
-                borderRadius: '0.5rem'
-              }}>
-                <div style={{ flexShrink: 0, marginTop: '0.125rem' }}>
-                  <svg width="20" height="20" fill="none" stroke="#D97706" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400E', margin: 0 }}>
-                    En Riesgo
-                  </p>
-                  <p style={{ fontSize: '0.75rem', color: '#92400E', margin: 0, marginTop: '0.125rem' }}>
-                    14 días sin enviar reporte
-                  </p>
-                </div>
-              </div>
-
-              <div style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '0.75rem',
-                padding: '1rem',
-                backgroundColor: '#F3F4F6',
-                borderRadius: '0.5rem'
-              }}>
-                <div style={{ flexShrink: 0, marginTop: '0.125rem' }}>
-                  <svg width="20" height="20" fill="none" stroke="#6B7280" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                  </svg>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: '0.875rem', fontWeight: '500', color: '#111827', margin: 0 }}>
-                    Inactivo
-                  </p>
-                  <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: 0, marginTop: '0.125rem' }}>
-                    21 días sin enviar reporte
-                  </p>
-                </div>
-              </div>
-            </div>
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #E5E7EB', padding: '20px' }}>
+            <p style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280', margin: '0 0 8px 0' }}>Expirados</p>
+            <p style={{ fontSize: '24px', fontWeight: '600', color: '#DC2626', margin: 0 }}>{auditData.stats.expiredLinks}</p>
           </div>
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #E5E7EB', padding: '20px' }}>
+            <p style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280', margin: '0 0 8px 0' }}>Total Reportes</p>
+            <p style={{ fontSize: '24px', fontWeight: '600', color: '#111827', margin: 0 }}>{auditData.stats.totalReports}</p>
+          </div>
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #E5E7EB', padding: '20px' }}>
+            <p style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280', margin: '0 0 8px 0' }}>Reportes Fallidos</p>
+            <p style={{ fontSize: '24px', fontWeight: '600', color: '#DC2626', margin: 0 }}>{auditData.stats.failedReports}</p>
+          </div>
+        </div>
 
-          {/* Botones */}
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+        {/* Tabs */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '8px', 
+          marginBottom: '24px',
+          borderBottom: '1px solid #E5E7EB'
+        }}>
+          {[
+            { key: 'links', label: `Links Enviados (${auditData.links.length})` },
+            { key: 'reports', label: `Reportes (${auditData.reports.length})` },
+            { key: 'failed', label: `Reportes Fallidos (${auditData.stats.failedReports})` },
+            { key: 'students', label: `Alumnos (${auditData.students.length})` },
+          ].map(tab => (
             <button
-              onClick={handleSave}
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
               style={{
-                flex: 1,
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#2563EB',
-                color: 'white',
+                padding: '12px 24px',
+                backgroundColor: 'transparent',
                 border: 'none',
-                borderRadius: '0.5rem',
-                fontSize: '0.875rem',
-                fontWeight: '500',
+                borderBottom: activeTab === tab.key ? '2px solid #2563EB' : '2px solid transparent',
+                color: activeTab === tab.key ? '#2563EB' : '#6B7280',
+                fontWeight: activeTab === tab.key ? '600' : '500',
                 cursor: 'pointer',
-                transition: 'background-color 0.2s'
+                fontSize: '14px'
               }}
-              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1D4ED8'}
-              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563EB'}
             >
-              💾 Guardar Configuración
+              {tab.label}
             </button>
-            <button
-              onClick={() => window.location.reload()}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: 'white',
-                color: '#374151',
-                border: '1px solid #D1D5DB',
-                borderRadius: '0.5rem',
-                fontSize: '0.875rem',
-                fontWeight: '500',
-                cursor: 'pointer',
-                transition: 'background-color 0.2s'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#F9FAFB'}
-              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'white'}
-            >
-              Cancelar
-            </button>
-          </div>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+          {activeTab === 'links' && (
+            <div>
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', margin: 0 }}>
+                  Historial de Links Enviados
+                </h2>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Estudiante</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Email</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Estado</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Enviado</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Expira</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditData.links.map((link, index) => (
+                      <tr key={link.id} style={{ borderBottom: index < auditData.links.length - 1 ? '1px solid #E5E7EB' : 'none' }}>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#111827' }}>
+                          {link.student?.full_name || 'N/A'}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                          {link.student?.email || 'N/A'}
+                        </td>
+                        <td style={{ padding: '16px 24px' }}>
+                          {getStatusBadge(isExpired(link.expires_at) ? 'expired' : link.status)}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                          {new Date(link.created_at).toLocaleDateString('es-AR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: isExpired(link.expires_at) ? '#DC2626' : '#6B7280' }}>
+                          {new Date(link.expires_at).toLocaleDateString('es-AR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'reports' && (
+            <div>
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', margin: 0 }}>
+                  Historial de Reportes
+                </h2>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Estudiante</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Email</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Fecha</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Procesos Activos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditData.reports.map((report, index) => (
+                      <tr key={report.id} style={{ borderBottom: index < auditData.reports.length - 1 ? '1px solid #E5E7EB' : 'none' }}>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#111827' }}>
+                          {report.student?.full_name || 'N/A'}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                          {report.student?.email || 'N/A'}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                          {new Date(report.created_at).toLocaleDateString('es-AR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#111827', fontWeight: '500' }}>
+                          {report.answers?.procesos_activos || 0}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'failed' && (
+            <div>
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', margin: 0 }}>
+                  Reportes Fallidos (No Enviados)
+                </h2>
+                <p style={{ fontSize: '12px', color: '#6B7280', margin: '4px 0 0 0' }}>
+                  Links enviados que expiraron o no fueron completados a tiempo
+                </p>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Estudiante</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Email</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Estado</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Enviado</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Expiró</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditData.failedReports && auditData.failedReports.length > 0 ? (
+                      auditData.failedReports.map((link, index) => (
+                        <tr key={link.id} style={{ borderBottom: index < auditData.failedReports.length - 1 ? '1px solid #E5E7EB' : 'none' }}>
+                          <td style={{ padding: '16px 24px', fontSize: '14px', color: '#111827' }}>
+                            {link.student?.full_name || 'N/A'}
+                          </td>
+                          <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                            {link.student?.email || 'N/A'}
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                            {getStatusBadge(isExpired(link.expires_at) ? 'expired' : 'pending')}
+                          </td>
+                          <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                            {new Date(link.created_at).toLocaleDateString('es-AR', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </td>
+                          <td style={{ padding: '16px 24px', fontSize: '14px', color: '#DC2626' }}>
+                            {new Date(link.expires_at).toLocaleDateString('es-AR', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} style={{ padding: '48px 24px', textAlign: 'center', fontSize: '14px', color: '#6B7280' }}>
+                          No hay reportes fallidos
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'students' && (
+            <div>
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', margin: 0 }}>
+                  Lista de Alumnos
+                </h2>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Nombre</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Email</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Estado</th>
+                      <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6B7280' }}>Última Interacción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditData.students.map((student, index) => (
+                      <tr key={student.id} style={{ borderBottom: index < auditData.students.length - 1 ? '1px solid #E5E7EB' : 'none' }}>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#111827' }}>
+                          {student.full_name}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                          {student.email}
+                        </td>
+                        <td style={{ padding: '16px 24px' }}>
+                          {getStatusBadge(student.status)}
+                        </td>
+                        <td style={{ padding: '16px 24px', fontSize: '14px', color: '#6B7280' }}>
+                          {student.last_interaction_at 
+                            ? new Date(student.last_interaction_at).toLocaleDateString('es-AR', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric'
+                              })
+                            : 'Nunca'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

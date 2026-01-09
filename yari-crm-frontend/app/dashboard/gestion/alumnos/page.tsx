@@ -18,6 +18,11 @@ export default function AlumnosPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('todos');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [newStudent, setNewStudent] = useState({ full_name: '', email: '', phone: '' });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchStudents();
@@ -92,6 +97,82 @@ export default function AlumnosPage() {
     }
   };
 
+  const handleAddStudent = async () => {
+    if (!newStudent.full_name || !newStudent.email) {
+      alert('Por favor completa nombre y email');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await axios.post('http://localhost:3000/students', {
+        full_name: newStudent.full_name,
+        email: newStudent.email,
+        phone: newStudent.phone || undefined,
+      });
+      setShowAddModal(false);
+      setNewStudent({ full_name: '', email: '', phone: '' });
+      fetchStudents();
+      alert('Alumno agregado correctamente');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Error al agregar alumno');
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditStudent = (student: Student) => {
+    setEditingStudent(student);
+    setNewStudent({
+      full_name: student.full_name,
+      email: student.email,
+      phone: student.phone || '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateStudent = async () => {
+    if (!editingStudent || !newStudent.full_name || !newStudent.email) {
+      alert('Por favor completa nombre y email');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await axios.patch(`http://localhost:3000/students/${editingStudent.id}`, {
+        full_name: newStudent.full_name,
+        email: newStudent.email,
+        phone: newStudent.phone || undefined,
+      });
+      setShowEditModal(false);
+      setEditingStudent(null);
+      setNewStudent({ full_name: '', email: '', phone: '' });
+      fetchStudents();
+      alert('Alumno actualizado correctamente');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Error al actualizar alumno');
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteStudent = async (studentId: number, studentName: string) => {
+    if (!confirm(`¿Estás seguro de eliminar a ${studentName}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      await axios.delete(`http://localhost:3000/students/${studentId}`);
+      fetchStudents();
+      alert('Alumno eliminado correctamente');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Error al eliminar alumno');
+      console.error(error);
+    }
+  };
+
   const counts = {
     todos: students.length,
     activos: students.filter(s => getStatusInfo(s.last_interaction_date).status === 'activo').length,
@@ -104,6 +185,28 @@ export default function AlumnosPage() {
       {/* Header */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #E5E7EB' }}>
         <div style={{ padding: '2rem' }}>
+          <Link href="/dashboard" style={{ textDecoration: 'none' }}>
+            <button
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.5rem 0.75rem',
+                backgroundColor: 'transparent',
+                border: 'none',
+                color: '#6B7280',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                cursor: 'pointer',
+                marginBottom: '1rem',
+                transition: 'color 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.color = '#111827'}
+              onMouseOut={(e) => e.currentTarget.style.color = '#6B7280'}
+            >
+              ← Volver al Dashboard
+            </button>
+          </Link>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h1 style={{ fontSize: '1.875rem', fontWeight: '600', color: '#111827', margin: 0 }}>
@@ -114,6 +217,23 @@ export default function AlumnosPage() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => setShowAddModal(true)}
+                style={{
+                  padding: '0.625rem 1rem',
+                  backgroundColor: '#2563EB',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1D4ED8'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563EB'}>
+                ➕ Agregar Alumno
+              </button>
               <Link href="/dashboard/gestion/configuracion">
                 <button style={{
                   padding: '0.625rem 1rem',
@@ -268,7 +388,7 @@ export default function AlumnosPage() {
                             {getDaysSinceLastInteraction(student.last_interaction_date)}
                           </td>
                           <td style={{ padding: '1rem 1.5rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
                               <button
                                 onClick={() => handleSendForm(student.id, student.full_name)}
                                 style={{
@@ -285,7 +405,7 @@ export default function AlumnosPage() {
                                 onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1D4ED8'}
                                 onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563EB'}
                               >
-                                📧 Enviar Formulario
+                                Enviar
                               </button>
                               <Link href={`/dashboard/gestion/alumnos/${student.id}`}>
                                 <button style={{
@@ -301,9 +421,57 @@ export default function AlumnosPage() {
                                 }}
                                 onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#F9FAFB'}
                                 onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'white'}>
-                                  👁️ Ver Ficha
+                                  Ver
                                 </button>
                               </Link>
+                              <button
+                                onClick={() => handleEditStudent(student)}
+                                style={{
+                                  padding: '0.5rem 0.75rem',
+                                  backgroundColor: 'white',
+                                  color: '#374151',
+                                  border: '1px solid #D1D5DB',
+                                  borderRadius: '0.375rem',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s'
+                                }}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#F9FAFB';
+                                  e.currentTarget.style.borderColor = '#9CA3AF';
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'white';
+                                  e.currentTarget.style.borderColor = '#D1D5DB';
+                                }}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteStudent(student.id, student.full_name)}
+                                style={{
+                                  padding: '0.5rem 0.75rem',
+                                  backgroundColor: 'white',
+                                  color: '#DC2626',
+                                  border: '1px solid #FCA5A5',
+                                  borderRadius: '0.375rem',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s'
+                                }}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#FEE2E2';
+                                  e.currentTarget.style.borderColor = '#DC2626';
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'white';
+                                  e.currentTarget.style.borderColor = '#FCA5A5';
+                                }}
+                              >
+                                Eliminar
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -321,6 +489,257 @@ export default function AlumnosPage() {
           )}
         </div>
       </div>
+
+      {/* Modal Agregar Alumno */}
+      {showAddModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }} onClick={() => setShowAddModal(false)}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            padding: '24px',
+            width: '90%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', margin: '0 0 24px 0' }}>
+              Agregar Nuevo Alumno
+            </h2>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Nombre Completo *
+                </label>
+                <input
+                  type="text"
+                  value={newStudent.full_name}
+                  onChange={(e) => setNewStudent({ ...newStudent, full_name: e.target.value })}
+                  placeholder="Juan Pérez"
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  value={newStudent.email}
+                  onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
+                  placeholder="juan@example.com"
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Teléfono (opcional)
+                </label>
+                <input
+                  type="tel"
+                  value={newStudent.phone}
+                  onChange={(e) => setNewStudent({ ...newStudent, phone: e.target.value })}
+                  placeholder="+54 11 1234-5678"
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+              <button
+                onClick={handleAddStudent}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  backgroundColor: saving ? '#93C5FD' : '#2563EB',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '500',
+                  cursor: saving ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {saving ? 'Guardando...' : 'Guardar'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddModal(false);
+                  setNewStudent({ full_name: '', email: '', phone: '' });
+                }}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: 'white',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '8px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Alumno */}
+      {showEditModal && editingStudent && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }} onClick={() => {
+          setShowEditModal(false);
+          setEditingStudent(null);
+          setNewStudent({ full_name: '', email: '', phone: '' });
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            padding: '24px',
+            width: '90%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', margin: '0 0 24px 0' }}>
+              Editar Alumno
+            </h2>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Nombre Completo *
+                </label>
+                <input
+                  type="text"
+                  value={newStudent.full_name}
+                  onChange={(e) => setNewStudent({ ...newStudent, full_name: e.target.value })}
+                  placeholder="Juan Pérez"
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  value={newStudent.email}
+                  onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
+                  placeholder="juan@example.com"
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  Teléfono (opcional)
+                </label>
+                <input
+                  type="tel"
+                  value={newStudent.phone}
+                  onChange={(e) => setNewStudent({ ...newStudent, phone: e.target.value })}
+                  placeholder="+54 11 1234-5678"
+                  style={{
+                    width: '100%',
+                    padding: '10px 16px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+              <button
+                onClick={handleUpdateStudent}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  padding: '12px 24px',
+                  backgroundColor: saving ? '#93C5FD' : '#2563EB',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '500',
+                  cursor: saving ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {saving ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingStudent(null);
+                  setNewStudent({ full_name: '', email: '', phone: '' });
+                }}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: 'white',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '8px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -43,6 +43,22 @@ export class WeeklyReportsService {
         throw new BadRequestException(error.message);
     }
 
+    // Actualizar last_interaction_at del estudiante y recalcular estado
+    const now = new Date();
+    await this.supabase
+      .from('students')
+      .update({
+        last_interaction_at: now.toISOString(),
+        status: 'active', // Vuelve a activo cuando envía reporte
+      })
+      .eq('id', linkData.student_id);
+
+    // Marcar el magic link como usado
+    await this.supabase
+      .from('magic_links')
+      .update({ status: 'completed' })
+      .eq('token', token);
+
     return data;
   }
 

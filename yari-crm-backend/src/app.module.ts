@@ -1,16 +1,16 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 
 import { StudentsModule } from './students/students.module';
 import { MagicLinksModule } from './magic-links/magic-links.module';
 import { WeeklyReportsModule } from './weekly-reports/weekly-reports.module';
 import { MailModule } from './mail/mail.module';
 import { SupabaseModule } from './supabase/supabase.module';
-import { GhlModule } from './ghl/ghl.module';
 import { SyncModule } from './sync/sync.module';
+import { ConfigModule as SystemConfigModule } from './config/config.module';
+import { AuditModule } from './audit/audit.module';
+import { StaffModule } from './staff/staff.module';
 
 @Module({
   imports: [
@@ -22,10 +22,10 @@ import { SyncModule } from './sync/sync.module';
     WeeklyReportsModule,
     MailModule,
     SupabaseModule,
-    GhlModule,
     SyncModule,
+    SystemConfigModule,
+    AuditModule,
+    StaffModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}
