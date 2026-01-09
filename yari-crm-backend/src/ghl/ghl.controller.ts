@@ -7,6 +7,6 @@ export class GhlController {
 
   @Get('test') // Esto crea la ruta: GET /ghl/test
   async testConnection() {
-    return await this.ghlService.getContacts();
+    return await this.ghlService.getAllContacts();
   }
 }

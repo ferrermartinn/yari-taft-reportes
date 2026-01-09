@@ -1,13 +1,9 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { WildmailService } from './wildmail.service';
-import { ConfigModule } from '@nestjs/config';
-import { HttpModule } from '@nestjs/axios'; // <--- Nueva herramienta
 
 @Module({
-  imports: [
-    ConfigModule, 
-    HttpModule // <--- Importamos el módulo HTTP para hacer llamadas externas
-  ],
+  imports: [HttpModule],
   providers: [WildmailService],
   exports: [WildmailService],
 })

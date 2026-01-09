@@ -1,17 +1,15 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { SyncService } from './sync.service';
-import { GhlModule } from '../ghl/ghl.module';
-import { SupabaseModule } from '../supabase/supabase.module';
-import { HttpModule } from '@nestjs/axios'; // <--- IMPORTANTE
-import { ConfigModule } from '@nestjs/config'; // <--- IMPORTANTE
+import { SyncController } from './sync.controller';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
-    HttpModule,     // <--- Necesario para hacer llamadas HTTP
-    ConfigModule,   // <--- Necesario para leer .env
-    GhlModule, 
-    SupabaseModule
-  ], 
+    HttpModule,
+    MailModule,
+  ],
+  controllers: [SyncController],
   providers: [SyncService],
   exports: [SyncService],
 })

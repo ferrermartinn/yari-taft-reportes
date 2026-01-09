@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { MailService } from './mail.service';
+import { GmailService } from './gmail.service';
 
 @Module({
-  providers: [MailService],
-  exports: [MailService], // Exportamos para que MagicLinks lo use
+  providers: [GmailService],
+  exports: [GmailService],
 })
 export class MailModule {}

@@ -1,121 +1,208 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { SupabaseService } from '../supabase/supabase.service';
-import { firstValueFrom } from 'rxjs';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
+import { GmailService } from '../mail/gmail.service';
 
 @Injectable()
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
-  private readonly ghlApiKey: string;
-  private readonly ghlLocationId: string;
-  private readonly ghlBaseUrl = 'https://services.leadconnectorhq.com';
-
-  // 👇 IMPORTANTE: Esta etiqueta debe ser IDÉNTICA a la que creaste en GHL
-  private readonly STUDENT_TAG = 'ALUMNO_SISTEMA'; 
+  private supabase: SupabaseClient;
+  private frontendUrl: string;
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly httpService: HttpService,
-    private readonly supabaseService: SupabaseService,
+    private gmailService: GmailService,
+    private configService: ConfigService,
   ) {
-    this.ghlApiKey = this.configService.get<string>('GHL_API_KEY') || '';
-    this.ghlLocationId = this.configService.get<string>('GHL_LOCATION_ID') || '';
+    this.supabase = createClient(
+      this.configService.get<string>('SUPABASE_URL')!,
+      this.configService.get<string>('SUPABASE_KEY')!,
+    );
+    this.frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
   }
 
-  async syncAllContactsFromGHL() {
-    this.logger.log(`🚀 Iniciando Sincronización FILTRADA (Solo tag: ${this.STUDENT_TAG})...`);
-    
-    let startAfterId = null;
-    let hasMore = true;
-    let totalProcessed = 0;
-    let totalSaved = 0;
-    let totalSkipped = 0;
+  /**
+   * 🔍 VERIFICACIÓN PREVIA: NO envía emails, solo verifica
+   */
+  async checkBeforeSend() {
+    this.logger.log('🔍 VERIFICANDO cuántos usuarios se procesarían...');
 
-    // Bucle para recorrer todas las páginas de GHL
-    while (hasMore) {
+    try {
+      const TEST_EMAIL = 'nahuelmartinferrer@gmail.com';
+
+      const { data: students } = await this.supabase
+        .from('students')
+        .select('id, email, full_name, status')
+        .eq('email', TEST_EMAIL)
+        .eq('status', 'active')
+        .limit(1);
+
+      if (!students || students.length === 0) {
+        this.logger.warn(`⚠️ Usuario ${TEST_EMAIL} no encontrado`);
+        return {
+          success: false,
+          message: `Usuario ${TEST_EMAIL} no encontrado en Supabase`,
+          count: 0,
+          users: [],
+        };
+      }
+
+      this.logger.log(`✅ Verificación completada: ${students.length} usuario(s)`);
+
+      return {
+        success: true,
+        message: '⚠️ ESTO ES SOLO VERIFICACIÓN - No se envió ningún email',
+        count: students.length,
+        users: students.map(s => ({
+          email: s.email,
+          name: s.full_name,
+          status: s.status,
+        })),
+        warning: 'Si ejecutas /sync/initial-migration se enviará email a estos usuarios',
+      };
+
+    } catch (error) {
+      this.logger.error(`❌ Error en verificación: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 🧪 MODO PRUEBA: Solo envía a UN email específico
+   */
+  async initialMigration() {
+    this.logger.log('🧪 MODO PRUEBA ACTIVADO - Solo se enviará a tu email');
+
+    try {
+      const TEST_EMAIL = 'nahuelmartinferrer@gmail.com';
+
+      const { data: students } = await this.supabase
+        .from('students')
+        .select('id, email, full_name')
+        .eq('email', TEST_EMAIL)
+        .eq('status', 'active')
+        .limit(1);
+
+      if (!students || students.length === 0) {
+        this.logger.warn(`⚠️ No se encontró el usuario: ${TEST_EMAIL}`);
+        return { 
+          success: false, 
+          message: `Usuario ${TEST_EMAIL} no encontrado en Supabase. Verifica que exista y esté activo.` 
+        };
+      }
+
+      const student = students[0];
+      this.logger.log(`👤 Usuario de prueba: ${student.email}`);
+
       try {
-        const url = `${this.ghlBaseUrl}/contacts/`;
-        const params: any = {
-          locationId: this.ghlLocationId,
-          limit: 100,
+        const token = uuidv4();
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        await this.supabase.from('magic_links').insert({
+          student_id: student.id,
+          token: token,
+          status: 'pending',
+          week_start_date: new Date().toISOString(),
+          expires_at: expiresAt.toISOString(),
+        });
+
+        const magicLink = `${this.frontendUrl}/report?token=${token}`;
+
+        this.logger.log(`📧 Enviando email de prueba a: ${student.email}`);
+        this.logger.log(`🔗 Magic Link: ${magicLink}`);
+
+        await this.gmailService.sendMagicLink(
+          student.email,
+          student.full_name,
+          magicLink,
+        );
+
+        this.logger.log('✅ Email de prueba enviado exitosamente');
+
+        return {
+          success: true,
+          message: 'Email de prueba enviado',
+          email: student.email,
+          magicLink: magicLink,
+          token: token,
         };
-        if (startAfterId) params.startAfterId = startAfterId;
-
-        const headers = { 
-          'Authorization': `Bearer ${this.ghlApiKey}`,
-          'Version': '2021-07-28', 
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        };
-
-        const response = await firstValueFrom(this.httpService.get(url, { headers, params }));
-        const contacts = response.data.contacts || [];
-
-        if (contacts.length === 0) {
-          hasMore = false;
-          break;
-        }
-
-        this.logger.log(`📥 Analizando lote de ${contacts.length}...`);
-        
-        for (const contact of contacts) {
-            totalProcessed++;
-            
-            const tags = contact.tags || [];
-            
-            // 🔍 FILTRO MAESTRO:
-            // Verificamos si tiene el tag 'ALUMNO_SISTEMA' (ignorando mayúsculas/minúsculas)
-            const hasStudentTag = tags.some((t: any) => String(t).toLowerCase() === this.STUDENT_TAG.toLowerCase());
-
-            // Si NO tiene el tag, lo ignoramos y pasamos al siguiente
-            if (!hasStudentTag) {
-                totalSkipped++;
-                continue; 
-            }
-
-            // Si llegamos aquí, ES UN ALUMNO REAL
-            if (!contact.email) continue;
-            
-            // Verificamos si además está inactivo
-            const isInactive = tags.some((t: any) => String(t).toLowerCase().includes('inactivo'));
-
-            const studentData = {
-                ghl_contact_id: contact.id,
-                email: contact.email.toLowerCase(),
-                full_name: contact.contactName || `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
-                phone: contact.phone,
-                city: contact.city,
-                country: contact.country,
-                status: isInactive ? 'inactive' : 'active',
-                custom_fields: contact,
-                updated_at: new Date(),
-            };
-
-            const { error } = await this.supabaseService.getClient()
-                .from('students')
-                .upsert(studentData, { onConflict: 'email' });
-
-            if (!error) totalSaved++;
-        }
-
-        // Preparamos la siguiente página
-        if (response.data.meta && response.data.meta.startAfterId) {
-          startAfterId = response.data.meta.startAfterId;
-        } else {
-          hasMore = false;
-        }
-        
-        // Pequeña pausa para no saturar
-        await new Promise(resolve => setTimeout(resolve, 50)); 
 
       } catch (error) {
-        this.logger.error(`❌ Error en el lote: ${error.message}`);
-        hasMore = false; 
+        this.logger.error(`❌ Error enviando email: ${error.message}`);
+        throw error;
       }
-    }
 
-    this.logger.log(`✅ FIN. Total GHL: ${totalProcessed} | 🗑️ Ignorados (Leads): ${totalSkipped} | 💾 ALUMNOS GUARDADOS: ${totalSaved}`);
-    return { processed: totalProcessed, skipped: totalSkipped, saved: totalSaved };
+    } catch (error) {
+      this.logger.error(`❌ Error general: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 🔄 CRON JOB SEMANAL - DESHABILITADO
+   */
+  // @Cron('0 9 * * 1')
+  async weeklyReportGeneration() {
+    this.logger.warn('⚠️ CRON JOB DESHABILITADO - No se ejecutará automáticamente');
+    return;
+  }
+
+  /**
+   * 🚨 VERIFICACIÓN DE INACTIVIDAD - DESHABILITADO
+   */
+  // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async checkInactiveStudents() {
+    this.logger.warn('⚠️ CRON JOB DESHABILITADO - No se ejecutará automáticamente');
+    return;
+  }
+
+  /**
+   * 🧪 TEST: Generar link para un email específico
+   */
+  async generateTestLink(email: string) {
+    try {
+      const { data: student } = await this.supabase
+        .from('students')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (!student) {
+        throw new Error(`Usuario no encontrado: ${email}`);
+      }
+
+      const token = uuidv4();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await this.supabase.from('magic_links').insert({
+        student_id: student.id,
+        token: token,
+        status: 'pending',
+        week_start_date: new Date().toISOString(),
+        expires_at: expiresAt.toISOString(),
+      });
+
+      const magicLink = `${this.frontendUrl}/report?token=${token}`;
+
+      await this.gmailService.sendMagicLink(
+        student.email,
+        student.full_name,
+        magicLink,
+      );
+
+      this.logger.log(`✅ Link de prueba generado para ${email}`);
+
+      return { success: true, magicLink, token };
+    } catch (error) {
+      this.logger.error(`❌ Error generando link de prueba: ${error.message}`);
+      throw error;
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

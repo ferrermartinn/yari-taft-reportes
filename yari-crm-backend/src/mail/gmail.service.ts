@@ -1,27 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
+import * as nodemailer from 'nodemailer';
 
 @Injectable()
-export class WildmailService {
-  private readonly logger = new Logger(WildmailService.name);
-  private readonly apiUrl: string;
-  private readonly apiKey: string;
+export class GmailService {
+  private readonly logger = new Logger(GmailService.name);
+  private transporter: nodemailer.Transporter;
 
-  constructor(
-    private configService: ConfigService,
-    private readonly httpService: HttpService,
-  ) {
-    this.apiUrl = this.configService.get<string>('WILDMAIL_URL') || '';
-    this.apiKey = this.configService.get<string>('WILDMAIL_KEY') || '';
+  constructor(private configService: ConfigService) {
+    this.transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: this.configService.get<string>('GMAIL_USER'),
+        pass: this.configService.get<string>('GMAIL_APP_PASSWORD'),
+      },
+    });
   }
 
   async sendMagicLink(email: string, studentName: string, magicLink: string) {
     try {
       this.logger.log(`📧 Preparando email para: ${email}`);
 
-      const url = `${this.apiUrl}/api/3/messages`;
+      const firstName = studentName.split(' ')[0];
 
       const emailHtml = `
 <!DOCTYPE html>
@@ -37,7 +37,7 @@ export class WildmailService {
   
   <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px;">
     <p style="font-size: 16px; color: #333; line-height: 1.6;">
-      Hola <strong>${studentName.split(' ')[0]}</strong>,
+      Hola <strong>${firstName}</strong>,
     </p>
     
     <p style="font-size: 16px; color: #333; line-height: 1.6;">
@@ -70,29 +70,20 @@ export class WildmailService {
 </html>
       `;
 
-      const payload = {
-        message: {
-          from: 'Yari Taft <hola@yaritaft.com>',
-          to: email,
-          subject: '📊 Tu Reporte Semanal Ya Está Listo',
-          html: emailHtml,
-        },
+      const mailOptions = {
+        from: `"Yari Taft" <${this.configService.get<string>('GMAIL_USER')}>`,
+        to: email,
+        subject: '📊 Tu Reporte Semanal Ya Está Listo',
+        html: emailHtml,
       };
 
-      const headers = {
-        'Api-Token': this.apiKey,
-        'Content-Type': 'application/json',
-      };
+      await this.transporter.sendMail(mailOptions);
 
-      const { data } = await firstValueFrom(
-        this.httpService.post(url, payload, { headers }),
-      );
-
-      this.logger.log(`✅ Email enviado a ${email}`);
-      return data;
+      this.logger.log(`✅ Email enviado exitosamente a ${email}`);
+      return { success: true };
 
     } catch (error) {
-      this.logger.error(`❌ ERROR enviando email a ${email}: ${error.response?.data?.message || error.message}`);
+      this.logger.error(`❌ ERROR enviando email a ${email}: ${error.message}`);
       throw error;
     }
   }

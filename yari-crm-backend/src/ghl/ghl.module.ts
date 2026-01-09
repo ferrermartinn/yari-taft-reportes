@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
-import { GhlService } from './ghl.service';
-import { GhlController } from './ghl.controller'; // <--- Verificar importación
-import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
+import { GhlService } from './ghl.service';
+import { GhlController } from './ghl.controller';
 
 @Module({
-  imports: [ConfigModule, HttpModule],
-  controllers: [GhlController], // <--- ¡ESTA LÍNEA ES LA CLAVE QUE FALTABA!
+  imports: [HttpModule],
+  controllers: [GhlController],
   providers: [GhlService],
   exports: [GhlService],
 })
